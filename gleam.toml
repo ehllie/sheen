@@ -4,7 +4,7 @@ version = "0.0.1"
 # Fill out these fields if you intend to generate HTML documentation or publish
 # your project to the Hex package manager.
 #
-description = "Fully typed library for constructing command line parsers"
+description = "Fully typed library for constructing command line parsers using gleaml"
 licences = ["MPL-2.0"]
 repository = { type = "github", user = "ehllie", repo = "sheen" }
 # links = [{ title = "Website", href = "https://gleam.run" }]
