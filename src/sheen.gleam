@@ -1,8 +1,10 @@
 import gleam/option.{None, Some}
 import gleam/list
 import gleam/result
-import sheen/command.{type Validator}
+import sheen/command
 import sheen/internal/extractor
+import sheen/internal/endec
+import sheen/error.{type BuildError, type ParseError}
 
 pub type ParserSpec {
   ParserSpec(
@@ -14,7 +16,7 @@ pub type ParserSpec {
 }
 
 pub type Parser(a) {
-  Parser(spec: ParserSpec, validator: Validator(a))
+  Parser(spec: ParserSpec, encoders: endec.Encoders, decoder: endec.Decoder(a))
 }
 
 pub fn new() -> ParserSpec {
@@ -35,41 +37,34 @@ pub fn version(to parser: ParserSpec, set version: String) {
 
 pub fn build(
   from parser: ParserSpec,
-  with builder: command.BuilderFn(a),
-) -> Result(Parser(a), command.BuildError) {
-  use command.Builder(spec, validator) <- result.try(builder(parser.cmd))
+  with build_fn: command.BuilderFn(a),
+) -> Result(Parser(a), BuildError) {
+  let ParserSpec(cmd: cmd, ..) = parser
+  let builder = command.Builder(spec: cmd, encoders: [], decoder: valid(Nil))
+  use command.Builder(spec, encoders, decoder) <- result.try(build_fn(builder))
   let spec = ParserSpec(..parser, cmd: spec)
-  Ok(Parser(spec, validator))
+  Ok(Parser(spec: spec, encoders: encoders, decoder: decoder))
 }
 
-pub fn extract(
-  from validator: Validator(a),
-  to cont: fn(a) -> Validator(b),
-) -> Validator(b) {
-  fn(input) {
-    use result <- result.try(validator(input))
-    cont(result)(input)
-  }
-}
-
-pub type ParseError {
-  ExtractionError(List(extractor.ExtractionError))
-  ValidationError(command.ValidationError)
+pub fn valid(value: a) -> endec.Decoder(a) {
+  endec.Decoder(fn(_) { Ok(value) })
 }
 
 pub type ParseResult(a) =
-  Result(a, ParseError)
+  Result(a, List(ParseError))
 
 pub fn run(parser: Parser(a), args: List(String)) -> ParseResult(a) {
-  let Parser(spec, validator) = parser
+  let Parser(spec, encoders, decoder) = parser
   let ParserSpec(cmd, ..) = spec
   let #(result, errors) =
     extractor.new(cmd)
     |> extractor.run(args)
   case errors {
     [] ->
-      validator(result)
-      |> result.map_error(fn(ve) { ValidationError(ve) })
-    _ -> Error(ExtractionError(errors))
+      result
+      |> endec.validate_and_run(encoders, decoder)
+      |> result.map_error(fn(e) { e })
+
+    errors -> Error(errors)
   }
 }

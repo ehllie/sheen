@@ -5,13 +5,17 @@ import gleam/list
 import gleam/string
 import gleam/option.{type Option, None, Some}
 import gleam/int
+import gleam/dynamic
 import sheen/command
+import sheen/error
+import sheen/internal/endec
 
 pub opaque type Builder(a) {
   Builder(
     name: String,
     spec: command.NamedSpec,
-    parse: fn(String) -> command.ValidationResult(a),
+    parse: fn(String) -> error.ParseResult(a),
+    decode: dynamic.Decoder(a),
   )
 }
 
@@ -25,7 +29,12 @@ const default_spec = command.NamedSpec(
 )
 
 pub fn new(name: String) -> Builder(String) {
-  Builder(name: name, spec: default_spec, parse: fn(value) { Ok(value) })
+  Builder(
+    name: name,
+    spec: default_spec,
+    parse: fn(value) { Ok(value) },
+    decode: dynamic.string,
+  )
 }
 
 pub fn short(builder: Builder(a), short: String) -> Builder(a) {
@@ -52,33 +61,42 @@ pub fn help(builder: Builder(a), help: String) -> Builder(a) {
 
 pub fn repeated(builder: Builder(a)) -> command.Command(List(a), b) {
   Builder(..builder, spec: command.NamedSpec(..builder.spec, repeated: True))
-  |> build(fn(parser, values) {
-    list.map(values, parser)
-    |> result.all
-  })
+  |> build(
+    fn(parser, values) {
+      list.map(values, parser)
+      |> result.all
+    },
+    fn(decoder) { dynamic.list(decoder) },
+  )
 }
 
 pub fn required(builder: Builder(a)) -> command.Command(a, b) {
   Builder(..builder, spec: command.NamedSpec(..builder.spec, optional: False))
-  |> build(fn(parser, values) {
-    case values {
-      [value] -> parser(value)
-      _ -> Error("Expected exactly one value")
-    }
-  })
+  |> build(
+    fn(parser, values) {
+      case values {
+        [value] -> parser(value)
+        _ -> Error(error.ValidationError("Expected exactly one value"))
+      }
+    },
+    fn(decoder) { decoder },
+  )
 }
 
 pub fn optional(builder: Builder(a)) -> command.Command(Option(a), b) {
   Builder(..builder, spec: command.NamedSpec(..builder.spec, optional: True))
-  |> build(fn(parser, values) {
-    case values {
-      [value] ->
-        parser(value)
-        |> result.map(Some)
-      [] -> Ok(None)
-      _ -> Error("Expected at most one value")
-    }
-  })
+  |> build(
+    fn(parser, values) {
+      case values {
+        [value] ->
+          parser(value)
+          |> result.map(Some)
+        [] -> Ok(None)
+        _ -> Error(error.ValidationError("Expected at most one value"))
+      }
+    },
+    fn(decoder) { dynamic.optional(decoder) },
+  )
 }
 
 pub fn integer(builder: Builder(String)) -> Builder(Int) {
@@ -91,9 +109,10 @@ pub fn integer(builder: Builder(String)) -> Builder(Int) {
     parse: fn(value) {
       case int.parse(value) {
         Ok(value) -> Ok(value)
-        Error(_) -> Error("Expected an integer")
+        Error(_) -> Error(error.ValidationError("Expected an integer"))
       }
     },
+    decode: dynamic.int,
   )
 }
 
@@ -108,22 +127,25 @@ pub fn enum(builder: Builder(String), values: List(#(String, a))) -> Builder(a) 
       case list.find(values, fn(variant) { variant.0 == value }) {
         Ok(#(_, value)) -> Ok(value)
         _ ->
-          Error(
+          Error(error.ValidationError(
             "Expected one of: "
             <> string.join(list.map(values, fn(variant) { variant.0 }), ", "),
-          )
+          ))
       }
     },
+    decode: fn(dyn) { Ok(dynamic.unsafe_coerce(dyn)) },
   )
 }
 
 fn build(
   builder: Builder(a),
-  map: fn(fn(String) -> command.ValidationResult(a), List(String)) ->
-    command.ValidationResult(b),
+  map: fn(fn(String) -> error.ParseResult(a), List(String)) ->
+    error.ParseResult(b),
+  decode_wrapper: fn(dynamic.Decoder(a)) -> dynamic.Decoder(b),
 ) -> command.Command(b, c) {
-  command.command(fn(cmd: command.CommandSpec) {
-    let Builder(name, spec, parse) = builder
+  let Builder(name, spec, parse, decode) = builder
+
+  let define = fn(cmd: command.CommandSpec) {
     let command.NamedSpec(long: long, short: short, ..) = spec
 
     use first <- result.try(
@@ -143,12 +165,16 @@ fn build(
     let named = dict.insert(cmd.named, name, spec)
     let cmd = command.CommandSpec(..cmd, named: named)
 
-    let validator = fn(input: command.ValidatorInput) {
-      dict.get(input.named, name)
-      |> result.unwrap([])
-      |> map(parse, _)
-    }
+    Ok(cmd)
+  }
 
-    Ok(command.Builder(cmd, validator))
-  })
+  let validate = fn(input: endec.ValidatorInput) {
+    dict.get(input.named, name)
+    |> result.unwrap([])
+    |> map(parse, _)
+  }
+
+  let decode = decode_wrapper(decode)
+
+  command.command(define, validate, decode)
 }

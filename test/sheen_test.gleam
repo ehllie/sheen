@@ -1,8 +1,9 @@
 import gleam/dict
+import gleam/list
 import gleam/option
 import gleeunit
 import gleeunit/should
-import sheen.{extract}
+import sheen
 import sheen/flag
 import sheen/command
 import sheen/arg
@@ -26,9 +27,9 @@ pub fn parser_build_test() {
         flag.new("help")
         |> flag.boolean()
       command.return({
-        use verbosity <- extract(verbosity)
-        use help <- extract(help)
-        fn(_) { Ok(#(verbosity, help)) }
+        use verbosity <- verbosity
+        use help <- help
+        sheen.valid(#(verbosity, help))
       })
     })
   let parser = should.be_ok(parser)
@@ -80,18 +81,16 @@ pub fn structured_parse_test() {
         |> named.optional()
 
       command.return({
-        use verbosity <- extract(verbosity)
-        use file <- extract(file)
-        use nums <- extract(nums)
-        use multi <- extract(multi)
-        fn(_) {
-          Ok(StructuredInput(
-            verbosity: verbosity,
-            file: file,
-            nums: nums,
-            multi: option.unwrap(multi, 0),
-          ))
-        }
+        use verbosity <- verbosity
+        use file <- file
+        use nums <- nums
+        use multi <- multi
+        sheen.valid(StructuredInput(
+          verbosity: verbosity,
+          file: file,
+          nums: nums,
+          multi: option.unwrap(multi, 0),
+        ))
       })
     })
 
@@ -100,4 +99,39 @@ pub fn structured_parse_test() {
   sheen.run(parser, ["-vv", "file", "42", "8", "--multi", "4"])
   |> should.be_ok
   |> should.equal(StructuredInput(2, "file", [42, 8], 4))
+
+  sheen.run(parser, ["file", "42", "not-a-number", "--multi", "not-a-number"])
+  |> should.be_error
+  |> list.length
+  |> should.equal(2)
+}
+
+pub type MyEnum {
+  A
+  B
+  C
+}
+
+pub fn enum_parse_test() {
+  let parser =
+    sheen.new()
+    |> sheen.build({
+      use enum <-
+        arg.new()
+        |> arg.enum([#("A", A), #("B", B), #("C", C)])
+        |> arg.required
+
+      command.return({
+        use enum <- enum
+        sheen.valid(enum)
+      })
+    })
+
+  let parser = should.be_ok(parser)
+  sheen.run(parser, ["A"])
+  |> should.be_ok
+  |> should.equal(A)
+
+  sheen.run(parser, ["D"])
+  |> should.be_error
 }

@@ -3,7 +3,10 @@ import gleam/dict
 import gleam/result
 import gleam/option.{None, Some}
 import gleam/string
+import gleam/dynamic
+import sheen/error
 import sheen/command
+import sheen/internal/endec
 
 pub opaque type Builder {
   Builder(name: String, spec: command.FlagSpec)
@@ -40,20 +43,22 @@ pub fn help(builder: Builder, help: String) -> Builder {
   Builder(..builder, spec: command.FlagSpec(..builder.spec, help: help))
 }
 
-pub fn count(builder: Builder) -> command.Command(Int, b) {
-  build(builder, Ok)
+pub fn count(builder: Builder) -> command.Command(Int, a) {
+  build(builder, Ok, dynamic.int)
 }
 
-pub fn boolean(builder: Builder) -> command.Command(Bool, b) {
-  build(builder, fn(count: Int) { Ok(count > 0) })
+pub fn boolean(builder: Builder) -> command.Command(Bool, a) {
+  build(builder, fn(count: Int) { Ok(count > 0) }, dynamic.bool)
 }
 
 fn build(
   builder: Builder,
-  map: fn(Int) -> command.ValidationResult(a),
+  map: fn(Int) -> error.ParseResult(a),
+  decode: dynamic.Decoder(a),
 ) -> command.Command(a, b) {
-  command.command(fn(cmd: command.CommandSpec) {
-    let Builder(name, spec) = builder
+  let Builder(name, spec) = builder
+
+  let define = fn(cmd: command.CommandSpec) {
     let command.FlagSpec(long: long, short: short, ..) = spec
 
     use first <- result.try(
@@ -73,12 +78,15 @@ fn build(
     let flags = dict.insert(cmd.flags, name, spec)
     let cmd = command.CommandSpec(..cmd, flags: flags)
 
-    let validator = fn(input: command.ValidatorInput) {
-      let count =
-        dict.get(input.flags, name)
-        |> result.unwrap(0)
-      map(count)
-    }
-    Ok(command.Builder(cmd, validator))
-  })
+    Ok(cmd)
+  }
+
+  let validate = fn(input: endec.ValidatorInput) {
+    let count =
+      dict.get(input.flags, name)
+      |> result.unwrap(0)
+    map(count)
+  }
+
+  command.command(define, validate, decode)
 }
