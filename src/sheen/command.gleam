@@ -109,4 +109,3 @@ pub fn describe(description: String, cont: BuilderFn(a)) -> BuilderFn(a) {
 pub fn return(validator: Validator(a)) -> BuilderFn(a) {
   fn(spec) { Ok(Builder(spec, validator)) }
 }
-// pub fn subcommand()

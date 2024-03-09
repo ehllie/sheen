@@ -3,11 +3,10 @@ import gleam/dict
 import gleam/result
 import gleam/option.{None, Some}
 import gleam/string
-import gleam/function.{identity}
 import sheen/command
 
-pub opaque type Builder(a) {
-  Builder(name: String, spec: command.FlagSpec, map: fn(Int) -> a)
+pub opaque type Builder {
+  Builder(name: String, spec: command.FlagSpec)
 }
 
 const default_desc = command.FlagSpec(
@@ -18,73 +17,67 @@ const default_desc = command.FlagSpec(
   help: "",
 )
 
-pub fn new(name: String) -> Builder(Bool) {
-  Builder(name: name, spec: default_desc, map: fn(count) {
-    case count {
-      0 -> False
-      _ -> True
-    }
-  })
+pub fn new(name: String) -> Builder {
+  Builder(name: name, spec: default_desc)
 }
 
-pub fn short(builder: Builder(a), short: String) -> Builder(a) {
+pub fn short(builder: Builder, short: String) -> Builder {
   Builder(..builder, spec: command.FlagSpec(..builder.spec, short: Some(short)))
 }
 
-pub fn long(builder: Builder(a), long: String) -> Builder(a) {
+pub fn long(builder: Builder, long: String) -> Builder {
   Builder(..builder, spec: command.FlagSpec(..builder.spec, long: Some(long)))
 }
 
-pub fn display(builder: Builder(a), display: String) -> Builder(a) {
+pub fn display(builder: Builder, display: String) -> Builder {
   Builder(
     ..builder,
     spec: command.FlagSpec(..builder.spec, display: Some(display)),
   )
 }
 
-pub fn help(builder: Builder(a), help: String) -> Builder(a) {
+pub fn help(builder: Builder, help: String) -> Builder {
   Builder(..builder, spec: command.FlagSpec(..builder.spec, help: help))
 }
 
-pub fn count(builder: Builder(Bool)) -> Builder(Int) {
-  let Builder(name, desc, _) = builder
-  Builder(
-    name: name,
-    spec: command.FlagSpec(..desc, count: True),
-    map: identity,
-  )
+pub fn count(builder: Builder) -> command.Command(Int, b) {
+  build(builder, Ok)
 }
 
-pub fn build(builder: Builder(a)) -> command.Command(a, b) {
+pub fn boolean(builder: Builder) -> command.Command(Bool, b) {
+  build(builder, fn(count: Int) { Ok(count > 0) })
+}
+
+fn build(
+  builder: Builder,
+  map: fn(Int) -> command.ValidationResult(a),
+) -> command.Command(a, b) {
   command.command(fn(cmd: command.CommandSpec) {
-    let Builder(name, spec, mapper) = builder
+    let Builder(name, spec) = builder
+    let command.FlagSpec(long: long, short: short, ..) = spec
 
     use first <- result.try(
       string.first(name)
       |> result.replace_error("Flag name cannot be empty"),
     )
 
-    let long = option.unwrap(spec.long, name)
-    let short = option.unwrap(spec.short, first)
+    let long = option.unwrap(long, name)
+    let short = option.unwrap(short, first)
 
     use <- guard(
       dict.has_key(cmd.flags, name),
       Error("Flag " <> name <> " already defined"),
     )
 
-    let flags =
-      cmd.flags
-      |> dict.insert(
-        name,
-        command.FlagSpec(..spec, long: Some(long), short: Some(short)),
-      )
-
+    let spec = command.FlagSpec(..spec, long: Some(long), short: Some(short))
+    let flags = dict.insert(cmd.flags, name, spec)
     let cmd = command.CommandSpec(..cmd, flags: flags)
+
     let validator = fn(input: command.ValidatorInput) {
       let count =
         dict.get(input.flags, name)
         |> result.unwrap(0)
-      Ok(mapper(count))
+      map(count)
     }
     Ok(command.Builder(cmd, validator))
   })

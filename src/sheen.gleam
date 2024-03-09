@@ -2,6 +2,7 @@ import gleam/option.{None, Some}
 import gleam/list
 import gleam/result
 import sheen/command.{type Validator}
+import sheen/internal/extractor
 
 pub type ParserSpec {
   ParserSpec(
@@ -48,5 +49,27 @@ pub fn extract(
   fn(input) {
     use result <- result.try(validator(input))
     cont(result)(input)
+  }
+}
+
+pub type ParseError {
+  ExtractionError(List(extractor.ExtractionError))
+  ValidationError(command.ValidationError)
+}
+
+pub type ParseResult(a) =
+  Result(a, ParseError)
+
+pub fn run(parser: Parser(a), args: List(String)) -> ParseResult(a) {
+  let Parser(spec, validator) = parser
+  let ParserSpec(cmd, ..) = spec
+  let #(result, errors) =
+    extractor.new(cmd)
+    |> extractor.run(args)
+  case errors {
+    [] ->
+      validator(result)
+      |> result.map_error(fn(ve) { ValidationError(ve) })
+    _ -> Error(ExtractionError(errors))
   }
 }
