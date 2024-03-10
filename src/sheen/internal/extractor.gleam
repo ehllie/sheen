@@ -3,7 +3,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/list
 import gleam/string
 import gleam/bool.{guard}
-import sheen/command
+import sheen/internal/command_builder as cb
 import sheen/internal/endec
 import sheen/error.{type ExtractionError, type ParseError}
 
@@ -39,7 +39,7 @@ pub type Extractor {
   )
 }
 
-fn create_spec(cmd: command.CommandSpec) {
+fn create_spec(cmd: cb.CommandSpec) {
   let short = dict.new()
   let long = dict.new()
 
@@ -86,7 +86,9 @@ fn create_spec(cmd: command.CommandSpec) {
     )
 
   let subcommands =
-    dict.map_values(cmd.subcommands, fn(_, spec) { create_spec(spec) })
+    dict.map_values(cmd.subcommands, fn(_, subcommand) {
+      create_spec(subcommand.spec)
+    })
 
   let max_args =
     list.fold(cmd.args, Some(0), fn(max, arg) {
@@ -107,7 +109,7 @@ fn create_spec(cmd: command.CommandSpec) {
   )
 }
 
-pub fn new(cmd: command.CommandSpec) -> Extractor {
+pub fn new(cmd: cb.CommandSpec) -> Extractor {
   let spec = create_spec(cmd)
   Extractor(
     spec: spec,

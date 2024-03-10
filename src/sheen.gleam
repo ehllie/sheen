@@ -1,14 +1,15 @@
 import gleam/option.{None, Some}
 import gleam/list
 import gleam/result
-import sheen/command
+import gleam/dict
+import sheen/internal/command_builder as cb
 import sheen/internal/extractor
 import sheen/internal/endec
 import sheen/error.{type BuildError, type ParseError}
 
 pub type ParserSpec {
   ParserSpec(
-    cmd: command.CommandSpec,
+    cmd: cb.CommandSpec,
     name: option.Option(String),
     authors: List(String),
     version: option.Option(String),
@@ -20,7 +21,18 @@ pub type Parser(a) {
 }
 
 pub fn new() -> ParserSpec {
-  ParserSpec(name: None, authors: list.new(), cmd: command.new(), version: None)
+  ParserSpec(
+    name: None,
+    authors: list.new(),
+    cmd: cb.CommandSpec(
+      flags: dict.new(),
+      named: dict.new(),
+      args: list.new(),
+      subcommands: dict.new(),
+      description: None,
+    ),
+    version: None,
+  )
 }
 
 pub fn name(to parser: ParserSpec, set name: String) {
@@ -37,13 +49,31 @@ pub fn version(to parser: ParserSpec, set version: String) {
 
 pub fn build(
   from parser: ParserSpec,
-  with build_fn: command.BuilderFn(a),
+  with command: cb.Command(a),
 ) -> Result(Parser(a), BuildError) {
   let ParserSpec(cmd: cmd, ..) = parser
-  let builder = command.Builder(spec: cmd, encoders: [], decoder: valid(Nil))
-  use command.Builder(spec, encoders, decoder) <- result.try(build_fn(builder))
+  let builder = cb.Builder(spec: cmd, encoders: [], decoder: valid(Nil))
+  use cb.Builder(spec, encoders, decoder) <- result.try(command(builder))
   let spec = ParserSpec(..parser, cmd: spec)
   Ok(Parser(spec: spec, encoders: encoders, decoder: decoder))
+}
+
+pub type Command(a) =
+  cb.Command(a)
+
+pub fn describe(description: String, cont: Command(a)) -> Command(a) {
+  fn(builder: cb.Builder(Nil)) {
+    let spec = cb.CommandSpec(..builder.spec, description: Some(description))
+    cont(cb.Builder(..builder, spec: spec))
+  }
+}
+
+pub fn return(decoder: endec.Decoder(a)) -> Command(a) {
+  fn(builder: cb.Builder(Nil)) {
+    let cb.Builder(spec, encoders, ..) = builder
+    let builder = cb.Builder(spec: spec, encoders: encoders, decoder: decoder)
+    Ok(builder)
+  }
 }
 
 pub fn valid(value: a) -> endec.Decoder(a) {

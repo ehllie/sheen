@@ -5,7 +5,6 @@ import gleeunit
 import gleeunit/should
 import sheen
 import sheen/flag
-import sheen/command
 import sheen/arg
 import sheen/named
 
@@ -26,7 +25,7 @@ pub fn parser_build_test() {
       use help <-
         flag.new("help")
         |> flag.boolean()
-      command.return({
+      sheen.return({
         use verbosity <- verbosity
         use help <- help
         sheen.valid(#(verbosity, help))
@@ -80,7 +79,7 @@ pub fn structured_parse_test() {
         |> named.integer()
         |> named.optional()
 
-      command.return({
+      sheen.return({
         use verbosity <- verbosity
         use file <- file
         use nums <- nums
@@ -121,7 +120,7 @@ pub fn enum_parse_test() {
         |> arg.enum([#("A", A), #("B", B), #("C", C)])
         |> arg.required
 
-      command.return({
+      sheen.return({
         use enum <- enum
         sheen.valid(enum)
       })

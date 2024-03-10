@@ -6,19 +6,19 @@ import gleam/option.{type Option, None, Some}
 import gleam/int
 import gleam/dynamic
 import gleam/dict
-import sheen/command
+import sheen/internal/command_builder as cb
 import sheen/error
 import sheen/internal/endec
 
 pub opaque type Builder(a) {
   Builder(
-    spec: command.ArgSpec,
+    spec: cb.ArgSpec,
     parse: fn(String) -> error.ParseResult(a),
     decode: dynamic.Decoder(a),
   )
 }
 
-const default_spec = command.ArgSpec(
+const default_spec = cb.ArgSpec(
   display: None,
   optional: False,
   repeated: False,
@@ -34,18 +34,15 @@ pub fn new() -> Builder(String) {
 }
 
 pub fn display(builder: Builder(a), display: String) -> Builder(a) {
-  Builder(
-    ..builder,
-    spec: command.ArgSpec(..builder.spec, display: Some(display)),
-  )
+  Builder(..builder, spec: cb.ArgSpec(..builder.spec, display: Some(display)))
 }
 
 pub fn help(builder: Builder(a), help: String) -> Builder(a) {
-  Builder(..builder, spec: command.ArgSpec(..builder.spec, help: help))
+  Builder(..builder, spec: cb.ArgSpec(..builder.spec, help: help))
 }
 
-pub fn repeated(builder: Builder(a)) -> command.Command(List(a), b) {
-  Builder(..builder, spec: command.ArgSpec(..builder.spec, repeated: True))
+pub fn repeated(builder: Builder(a)) -> cb.BuilderFn(List(a), b) {
+  Builder(..builder, spec: cb.ArgSpec(..builder.spec, repeated: True))
   |> build(
     fn(parser, values) {
       list.map(values, parser)
@@ -55,8 +52,8 @@ pub fn repeated(builder: Builder(a)) -> command.Command(List(a), b) {
   )
 }
 
-pub fn required(builder: Builder(a)) -> command.Command(a, b) {
-  Builder(..builder, spec: command.ArgSpec(..builder.spec, optional: False))
+pub fn required(builder: Builder(a)) -> cb.BuilderFn(a, b) {
+  Builder(..builder, spec: cb.ArgSpec(..builder.spec, optional: False))
   |> build(
     fn(parser, values) {
       case values {
@@ -68,8 +65,8 @@ pub fn required(builder: Builder(a)) -> command.Command(a, b) {
   )
 }
 
-pub fn optional(builder: Builder(a)) -> command.Command(Option(a), b) {
-  Builder(..builder, spec: command.ArgSpec(..builder.spec, optional: True))
+pub fn optional(builder: Builder(a)) -> cb.BuilderFn(Option(a), b) {
+  Builder(..builder, spec: cb.ArgSpec(..builder.spec, optional: True))
   |> build(
     fn(parser, values) {
       case values {
@@ -86,7 +83,7 @@ pub fn optional(builder: Builder(a)) -> command.Command(Option(a), b) {
 
 pub fn integer(builder: Builder(String)) -> Builder(Int) {
   Builder(
-    spec: command.ArgSpec(
+    spec: cb.ArgSpec(
       ..builder.spec,
       display: option.or(builder.spec.display, Some("INTEGER")),
     ),
@@ -108,7 +105,7 @@ pub fn enum(builder: Builder(String), values: List(#(String, a))) -> Builder(a) 
     |> dict.from_list
 
   Builder(
-    spec: command.ArgSpec(
+    spec: cb.ArgSpec(
       ..builder.spec,
       display: option.or(builder.spec.display, Some("ENUM")),
     ),
@@ -130,73 +127,40 @@ fn build(
   map: fn(fn(String) -> error.ParseResult(a), List(String)) ->
     error.ParseResult(b),
   decode_wrap: fn(dynamic.Decoder(a)) -> dynamic.Decoder(b),
-) -> command.Command(b, c) {
-  let Builder(spec, parse, decode) = builder
-  fn(cont) {
-    fn(builder: command.Builder(Nil)) {
-      let position = list.length(builder.spec.args)
-      let command.ArgSpec(optional: optional, repeated: repeated, ..) = spec
-      let define = fn(cmd: command.CommandSpec) {
-        use <- guard(
-          optional && repeated,
-          Error("Arguments can be either optional or repeated, not both"),
-        )
+) -> cb.BuilderFn(b, c) {
+  cb.new(fn(cmd_builder: cb.Builder(Nil)) {
+    let Builder(spec, parse, decode) = builder
+    let cb.ArgSpec(optional: optional, repeated: repeated, ..) = spec
+    let cb.Builder(spec: cmd, ..) = cmd_builder
+    let position = list.length(cmd.args)
 
-        let conflict = case list.last(cmd.args) {
-          Ok(command.ArgSpec(repeated: True, ..)) ->
-            "Can't add a positional argument after a repeated one"
-          Ok(command.ArgSpec(optional: True, ..)) if !optional || !repeated ->
-            "Can't add a required positional argument after an optional one"
-          _ -> ""
-        }
+    use <- guard(
+      optional && repeated,
+      Error("Arguments can be either optional or repeated, not both"),
+    )
 
-        use <- guard(conflict != "", Error(conflict))
-        let cmd =
-          command.CommandSpec(..cmd, args: list.append(cmd.args, [spec]))
-        Ok(cmd)
-      }
-
-      let validate = fn(input: endec.ValidatorInput) {
-        let values = list.drop(input.args, position)
-        let values = case repeated {
-          True -> values
-          False -> list.take(values, 1)
-        }
-        map(parse, values)
-      }
-
-      let decode = decode_wrap(decode)
-
-      command.command(define, validate, decode)(cont)(builder)
+    let conflict = case list.last(cmd.args) {
+      Ok(cb.ArgSpec(repeated: True, ..)) ->
+        "Can't add a positional argument after a repeated one"
+      Ok(cb.ArgSpec(optional: True, ..)) if !optional || !repeated ->
+        "Can't add a required positional argument after an optional one"
+      _ -> ""
     }
-  }
-  // command.command(fn(cmd: command.CommandSpec) {
 
-  //   use <- guard(
-  //     optional && repeated,
-  //     Error("Arguments can be either optional or repeated, not both"),
-  //   )
+    use <- guard(conflict != "", Error(conflict))
+    let cmd = cb.CommandSpec(..cmd, args: list.append(cmd.args, [spec]))
 
-  //   let conflict = case list.last(cmd.args) {
-  //     Ok(command.ArgSpec(repeated: True, ..)) ->
-  //       "Can't add a positional argument after a repeated one"
-  //     Ok(command.ArgSpec(optional: True, ..)) if !optional || !repeated ->
-  //       "Can't add a required positional argument after an optional one"
-  //     _ -> ""
-  //   }
+    let validate = fn(input: endec.ValidatorInput) {
+      let values = list.drop(input.args, position)
+      let values = case repeated {
+        True -> values
+        False -> list.take(values, 1)
+      }
+      map(parse, values)
+    }
 
-  //   use <- guard(conflict != "", Error(conflict))
-  //   let position = list.length(cmd.args)
-  //   let cmd = command.CommandSpec(..cmd, args: list.append(cmd.args, [spec]))
-  //   let validator = fn(input: command.ValidatorInput) {
-  //     let values = list.drop(input.args, position)
-  //     let values = case repeated {
-  //       True -> values
-  //       False -> list.take(values, 1)
-  //     }
-  //     map(parse, values)
-  //   }
+    let decode = decode_wrap(decode)
 
-  //   Ok(command.Builder(cmd, validator))
-  // })
+    Ok(cb.Definition(cmd, validate, decode))
+  })
 }

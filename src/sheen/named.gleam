@@ -6,20 +6,20 @@ import gleam/string
 import gleam/option.{type Option, None, Some}
 import gleam/int
 import gleam/dynamic
-import sheen/command
+import sheen/internal/command_builder as cb
 import sheen/error
 import sheen/internal/endec
 
 pub opaque type Builder(a) {
   Builder(
     name: String,
-    spec: command.NamedSpec,
+    spec: cb.NamedSpec,
     parse: fn(String) -> error.ParseResult(a),
     decode: dynamic.Decoder(a),
   )
 }
 
-const default_spec = command.NamedSpec(
+const default_spec = cb.NamedSpec(
   short: None,
   long: None,
   display: None,
@@ -38,29 +38,23 @@ pub fn new(name: String) -> Builder(String) {
 }
 
 pub fn short(builder: Builder(a), short: String) -> Builder(a) {
-  Builder(
-    ..builder,
-    spec: command.NamedSpec(..builder.spec, short: Some(short)),
-  )
+  Builder(..builder, spec: cb.NamedSpec(..builder.spec, short: Some(short)))
 }
 
 pub fn long(builder: Builder(a), long: String) -> Builder(a) {
-  Builder(..builder, spec: command.NamedSpec(..builder.spec, long: Some(long)))
+  Builder(..builder, spec: cb.NamedSpec(..builder.spec, long: Some(long)))
 }
 
 pub fn display(builder: Builder(a), display: String) -> Builder(a) {
-  Builder(
-    ..builder,
-    spec: command.NamedSpec(..builder.spec, display: Some(display)),
-  )
+  Builder(..builder, spec: cb.NamedSpec(..builder.spec, display: Some(display)))
 }
 
 pub fn help(builder: Builder(a), help: String) -> Builder(a) {
-  Builder(..builder, spec: command.NamedSpec(..builder.spec, help: help))
+  Builder(..builder, spec: cb.NamedSpec(..builder.spec, help: help))
 }
 
-pub fn repeated(builder: Builder(a)) -> command.Command(List(a), b) {
-  Builder(..builder, spec: command.NamedSpec(..builder.spec, repeated: True))
+pub fn repeated(builder: Builder(a)) -> cb.BuilderFn(List(a), b) {
+  Builder(..builder, spec: cb.NamedSpec(..builder.spec, repeated: True))
   |> build(
     fn(parser, values) {
       list.map(values, parser)
@@ -70,8 +64,8 @@ pub fn repeated(builder: Builder(a)) -> command.Command(List(a), b) {
   )
 }
 
-pub fn required(builder: Builder(a)) -> command.Command(a, b) {
-  Builder(..builder, spec: command.NamedSpec(..builder.spec, optional: False))
+pub fn required(builder: Builder(a)) -> cb.BuilderFn(a, b) {
+  Builder(..builder, spec: cb.NamedSpec(..builder.spec, optional: False))
   |> build(
     fn(parser, values) {
       case values {
@@ -83,8 +77,8 @@ pub fn required(builder: Builder(a)) -> command.Command(a, b) {
   )
 }
 
-pub fn optional(builder: Builder(a)) -> command.Command(Option(a), b) {
-  Builder(..builder, spec: command.NamedSpec(..builder.spec, optional: True))
+pub fn optional(builder: Builder(a)) -> cb.BuilderFn(Option(a), b) {
+  Builder(..builder, spec: cb.NamedSpec(..builder.spec, optional: True))
   |> build(
     fn(parser, values) {
       case values {
@@ -102,7 +96,7 @@ pub fn optional(builder: Builder(a)) -> command.Command(Option(a), b) {
 pub fn integer(builder: Builder(String)) -> Builder(Int) {
   Builder(
     name: builder.name,
-    spec: command.NamedSpec(
+    spec: cb.NamedSpec(
       ..builder.spec,
       display: option.or(builder.spec.display, Some("INTEGER")),
     ),
@@ -119,7 +113,7 @@ pub fn integer(builder: Builder(String)) -> Builder(Int) {
 pub fn enum(builder: Builder(String), values: List(#(String, a))) -> Builder(a) {
   Builder(
     name: builder.name,
-    spec: command.NamedSpec(
+    spec: cb.NamedSpec(
       ..builder.spec,
       display: option.or(builder.spec.display, Some("ENUM")),
     ),
@@ -142,11 +136,11 @@ fn build(
   map: fn(fn(String) -> error.ParseResult(a), List(String)) ->
     error.ParseResult(b),
   decode_wrapper: fn(dynamic.Decoder(a)) -> dynamic.Decoder(b),
-) -> command.Command(b, c) {
-  let Builder(name, spec, parse, decode) = builder
-
-  let define = fn(cmd: command.CommandSpec) {
-    let command.NamedSpec(long: long, short: short, ..) = spec
+) -> cb.BuilderFn(b, c) {
+  cb.new(fn(cmd_builder: cb.Builder(Nil)) {
+    let Builder(name, spec, parse, decode) = builder
+    let cb.NamedSpec(long: long, short: short, ..) = spec
+    let cb.Builder(spec: cmd, ..) = cmd_builder
 
     use first <- result.try(
       string.first(name)
@@ -161,20 +155,18 @@ fn build(
       Error("Argument " <> name <> " already defined"),
     )
 
-    let spec = command.NamedSpec(..spec, short: Some(short), long: Some(long))
+    let spec = cb.NamedSpec(..spec, short: Some(short), long: Some(long))
     let named = dict.insert(cmd.named, name, spec)
-    let cmd = command.CommandSpec(..cmd, named: named)
+    let cmd = cb.CommandSpec(..cmd, named: named)
 
-    Ok(cmd)
-  }
+    let validate = fn(input: endec.ValidatorInput) {
+      dict.get(input.named, name)
+      |> result.unwrap([])
+      |> map(parse, _)
+    }
 
-  let validate = fn(input: endec.ValidatorInput) {
-    dict.get(input.named, name)
-    |> result.unwrap([])
-    |> map(parse, _)
-  }
+    let decode = decode_wrapper(decode)
 
-  let decode = decode_wrapper(decode)
-
-  command.command(define, validate, decode)
+    Ok(cb.Definition(cmd, validate, decode))
+  })
 }

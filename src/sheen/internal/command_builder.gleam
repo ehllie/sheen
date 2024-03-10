@@ -1,7 +1,6 @@
 import gleam/dict
 import gleam/result
-import gleam/option.{None, Some}
-import gleam/list
+import gleam/option
 import gleam/dynamic
 import sheen/error.{type BuildResult}
 import sheen/internal/endec
@@ -36,24 +35,29 @@ pub type ArgSpec {
   )
 }
 
+pub type Subcommand {
+  Optional(spec: CommandSpec)
+  Required(spec: CommandSpec)
+}
+
 pub type CommandSpec {
   CommandSpec(
     flags: dict.Dict(String, FlagSpec),
     named: dict.Dict(String, NamedSpec),
     args: List(ArgSpec),
-    subcommands: dict.Dict(String, CommandSpec),
+    subcommands: dict.Dict(String, Subcommand),
     description: option.Option(String),
   )
 }
 
-pub type BuilderFn(a) =
+pub type Command(a) =
   fn(Builder(Nil)) -> BuildResult(Builder(a))
 
 pub type Continuation(a, b) =
-  fn(endec.DecodeBuilder(a, b)) -> BuilderFn(b)
+  fn(endec.DecodeBuilder(a, b)) -> Command(b)
 
-pub type Command(a, b) =
-  fn(Continuation(a, b)) -> BuilderFn(b)
+pub type BuilderFn(a, b) =
+  fn(Continuation(a, b)) -> Command(b)
 
 pub type Builder(a) {
   Builder(
@@ -63,44 +67,29 @@ pub type Builder(a) {
   )
 }
 
-pub fn command(
-  define: fn(CommandSpec) -> BuildResult(CommandSpec),
-  validate: endec.Validator(a),
-  decode: dynamic.Decoder(a),
-) {
-  fn(cont: Continuation(a, b)) {
-    fn(builder: Builder(Nil)) {
-      let Builder(spec: spec, encoders: encoders, ..) = builder
-      use spec <- result.try(define(spec))
-      let #(encoders, decode_builder) =
-        endec.insert_validator(encoders, validate, decode)
-      let builder = Builder(..builder, encoders: encoders, spec: spec)
-      cont(decode_builder)(builder)
-    }
-  }
-}
-
-pub fn new() -> CommandSpec {
-  CommandSpec(
-    flags: dict.new(),
-    named: dict.new(),
-    args: list.new(),
-    subcommands: dict.new(),
-    description: None,
+pub type Definition(a) {
+  Definition(
+    spec: CommandSpec,
+    validate: endec.Validator(a),
+    decode: dynamic.Decoder(a),
   )
 }
 
-pub fn describe(description: String, cont: BuilderFn(a)) -> BuilderFn(a) {
-  fn(builder: Builder(Nil)) {
-    let spec = CommandSpec(..builder.spec, description: Some(description))
-    cont(Builder(..builder, spec: spec))
-  }
-}
+pub fn new(
+  define: fn(Builder(Nil)) -> BuildResult(Definition(a)),
+) -> BuilderFn(a, b) {
+  fn(cont: Continuation(a, b)) {
+    fn(builder: Builder(Nil)) {
+      use definition <- result.try(define(builder))
+      let Definition(spec: spec, validate: validate, decode: decode) =
+        definition
 
-pub fn return(decoder: endec.Decoder(a)) -> BuilderFn(a) {
-  fn(builder: Builder(Nil)) {
-    let Builder(spec, encoders, ..) = builder
-    let builder = Builder(spec: spec, encoders: encoders, decoder: decoder)
-    Ok(builder)
+      let Builder(encoders: encoders, ..) = builder
+      let #(encoders, decode_builder) =
+        endec.insert_validator(encoders, validate, decode)
+      let builder = Builder(..builder, encoders: encoders, spec: spec)
+
+      cont(decode_builder)(builder)
+    }
   }
 }

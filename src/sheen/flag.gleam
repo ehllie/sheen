@@ -5,14 +5,14 @@ import gleam/option.{None, Some}
 import gleam/string
 import gleam/dynamic
 import sheen/error
-import sheen/command
+import sheen/internal/command_builder as cb
 import sheen/internal/endec
 
 pub opaque type Builder {
-  Builder(name: String, spec: command.FlagSpec)
+  Builder(name: String, spec: cb.FlagSpec)
 }
 
-const default_desc = command.FlagSpec(
+const default_desc = cb.FlagSpec(
   short: None,
   long: None,
   display: None,
@@ -25,29 +25,26 @@ pub fn new(name: String) -> Builder {
 }
 
 pub fn short(builder: Builder, short: String) -> Builder {
-  Builder(..builder, spec: command.FlagSpec(..builder.spec, short: Some(short)))
+  Builder(..builder, spec: cb.FlagSpec(..builder.spec, short: Some(short)))
 }
 
 pub fn long(builder: Builder, long: String) -> Builder {
-  Builder(..builder, spec: command.FlagSpec(..builder.spec, long: Some(long)))
+  Builder(..builder, spec: cb.FlagSpec(..builder.spec, long: Some(long)))
 }
 
 pub fn display(builder: Builder, display: String) -> Builder {
-  Builder(
-    ..builder,
-    spec: command.FlagSpec(..builder.spec, display: Some(display)),
-  )
+  Builder(..builder, spec: cb.FlagSpec(..builder.spec, display: Some(display)))
 }
 
 pub fn help(builder: Builder, help: String) -> Builder {
-  Builder(..builder, spec: command.FlagSpec(..builder.spec, help: help))
+  Builder(..builder, spec: cb.FlagSpec(..builder.spec, help: help))
 }
 
-pub fn count(builder: Builder) -> command.Command(Int, a) {
+pub fn count(builder: Builder) -> cb.BuilderFn(Int, a) {
   build(builder, Ok, dynamic.int)
 }
 
-pub fn boolean(builder: Builder) -> command.Command(Bool, a) {
+pub fn boolean(builder: Builder) -> cb.BuilderFn(Bool, a) {
   build(builder, fn(count: Int) { Ok(count > 0) }, dynamic.bool)
 }
 
@@ -55,11 +52,11 @@ fn build(
   builder: Builder,
   map: fn(Int) -> error.ParseResult(a),
   decode: dynamic.Decoder(a),
-) -> command.Command(a, b) {
-  let Builder(name, spec) = builder
-
-  let define = fn(cmd: command.CommandSpec) {
-    let command.FlagSpec(long: long, short: short, ..) = spec
+) -> cb.BuilderFn(a, b) {
+  cb.new(fn(cmd_builder: cb.Builder(Nil)) {
+    let Builder(name, spec) = builder
+    let cb.FlagSpec(long: long, short: short, ..) = spec
+    let cb.Builder(spec: cmd, ..) = cmd_builder
 
     use first <- result.try(
       string.first(name)
@@ -74,19 +71,17 @@ fn build(
       Error("Flag " <> name <> " already defined"),
     )
 
-    let spec = command.FlagSpec(..spec, long: Some(long), short: Some(short))
+    let spec = cb.FlagSpec(..spec, long: Some(long), short: Some(short))
     let flags = dict.insert(cmd.flags, name, spec)
-    let cmd = command.CommandSpec(..cmd, flags: flags)
+    let cmd = cb.CommandSpec(..cmd, flags: flags)
 
-    Ok(cmd)
-  }
+    let validate = fn(input: endec.ValidatorInput) {
+      let count =
+        dict.get(input.flags, name)
+        |> result.unwrap(0)
+      map(count)
+    }
 
-  let validate = fn(input: endec.ValidatorInput) {
-    let count =
-      dict.get(input.flags, name)
-      |> result.unwrap(0)
-    map(count)
-  }
-
-  command.command(define, validate, decode)
+    Ok(cb.Definition(cmd, validate, decode))
+  })
 }
