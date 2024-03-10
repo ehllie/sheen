@@ -1,6 +1,7 @@
 import gleam/dict
 import gleam/option.{type Option, None, Some}
 import gleam/list
+import gleam/result.{unwrap}
 import gleam/string
 import gleam/bool.{guard}
 import sheen/internal/command_builder as cb
@@ -15,7 +16,7 @@ pub type OptionKind {
 }
 
 pub type ExtractorSpec {
-  /// This provides the context necessary to create ValidatorInput.
+  /// This provides the context necessary to create EncoderInput.
   /// We need to know how to interpret short and long flags,
   /// ie. whether they are flags or named options, since the
   /// former will not consume the next argument, and the latter
@@ -35,6 +36,7 @@ pub type Extractor {
     spec: ExtractorSpec,
     opts_ignored: Bool,
     result: endec.EncoderInput,
+    subcommand_path: List(String),
     errors: List(ParseError),
   )
 }
@@ -90,8 +92,13 @@ fn create_spec(cmd: cb.CommandSpec) {
       create_spec(subcommand.spec)
     })
 
+  let max_args = {
+    use <- bool.guard(dict.new() == subcommands, Some(0))
+    Some(1)
+  }
+
   let max_args =
-    list.fold(cmd.args, Some(0), fn(max, arg) {
+    list.fold(cmd.args, max_args, fn(max, arg) {
       case max {
         Some(max) -> {
           use <- guard(arg.repeated, None)
@@ -114,59 +121,52 @@ pub fn new(cmd: cb.CommandSpec) -> Extractor {
   Extractor(
     spec: spec,
     opts_ignored: False,
-    result: endec.ValidatorInput(
-      args: list.new(),
-      flags: dict.new(),
-      named: dict.new(),
-      subcommands: dict.new(),
-    ),
+    result: endec.new_input(),
+    subcommand_path: list.new(),
     errors: list.new(),
   )
 }
 
 fn add_arg(extractor: Extractor, arg: String) -> Extractor {
-  let Extractor(result: result, spec: spec, ..) = extractor
-  let result = endec.ValidatorInput(..result, args: [arg, ..result.args])
+  let Extractor(spec: spec, ..) = extractor
   let spec =
     ExtractorSpec(
       ..spec,
       max_args: option.map(spec.max_args, fn(old) { old - 1 }),
     )
-  Extractor(..extractor, result: result, spec: spec)
+  let extractor = Extractor(..extractor, spec: spec)
+  use result <- update_result(extractor)
+  endec.EncoderInput(..result, args: [arg, ..result.args])
 }
 
 fn reverse_args(extractor: Extractor) -> Extractor {
   let Extractor(result: result, ..) = extractor
-  let result = endec.ValidatorInput(..result, args: list.reverse(result.args))
+  let result = endec.EncoderInput(..result, args: list.reverse(result.args))
   Extractor(..extractor, result: result)
 }
 
 fn add_flag(extractor: Extractor, name: String) -> Extractor {
-  let Extractor(result: result, ..) = extractor
-  let endec.ValidatorInput(flags: flags, ..) = result
-  let result =
-    endec.ValidatorInput(
-      ..result,
-      flags: dict.update(flags, name, fn(old) {
-        option.map(old, fn(old) { old + 1 })
-        |> option.unwrap(1)
-      }),
-    )
-  Extractor(..extractor, result: result)
+  use result <- update_result(extractor)
+  let endec.EncoderInput(flags: flags, ..) = result
+  endec.EncoderInput(
+    ..result,
+    flags: dict.update(flags, name, fn(old) {
+      option.map(old, fn(old) { old + 1 })
+      |> option.unwrap(1)
+    }),
+  )
 }
 
 fn add_named(extractor: Extractor, name: String, value: String) -> Extractor {
-  let Extractor(result: result, ..) = extractor
-  let endec.ValidatorInput(named: named, ..) = result
-  let result =
-    endec.ValidatorInput(
-      ..result,
-      named: dict.update(named, name, fn(old) {
-        option.map(old, fn(old) { [value, ..old] })
-        |> option.unwrap([value])
-      }),
-    )
-  Extractor(..extractor, result: result)
+  use result <- update_result(extractor)
+  let endec.EncoderInput(named: named, ..) = result
+  endec.EncoderInput(
+    ..result,
+    named: dict.update(named, name, fn(old) {
+      option.map(old, fn(old) { [value, ..old] })
+      |> option.unwrap([value])
+    }),
+  )
 }
 
 fn with_spec(extractor: Extractor, spec: ExtractorSpec) -> Extractor {
@@ -180,6 +180,40 @@ fn error(extractor: Extractor, error: ExtractionError) -> Extractor {
 
 fn ignore_opts(extractor: Extractor) -> Extractor {
   Extractor(..extractor, opts_ignored: True)
+}
+
+fn descend_subcommand(extractor: Extractor, subcommand: String) -> Extractor {
+  let Extractor(subcommand_path: path, ..) = extractor
+  Extractor(..extractor, subcommand_path: [subcommand, ..path])
+}
+
+fn update_result(
+  extractor: Extractor,
+  update: fn(endec.EncoderInput) -> endec.EncoderInput,
+) -> Extractor {
+  let Extractor(result: result, subcommand_path: path, ..) = extractor
+
+  let #(result, results) =
+    list.fold_right(path, #(result, []), fn(acc, subcommand) {
+      let #(result, results) = acc
+      let subcommand_result =
+        dict.get(result.subcommands, subcommand)
+        |> unwrap(endec.new_input())
+      #(subcommand_result, [subcommand_result, ..results])
+    })
+
+  let updated_result =
+    results
+    |> list.zip(path)
+    |> list.fold(update(result), fn(result, parent) {
+      let #(parent_result, subcommand) = parent
+      let subcommands =
+        parent_result.subcommands
+        |> dict.insert(subcommand, result)
+      endec.EncoderInput(..parent_result, subcommands: subcommands)
+    })
+
+  Extractor(..extractor, result: updated_result)
 }
 
 pub fn run(
@@ -294,6 +328,7 @@ pub fn run(
       case dict.get(spec.subcommands, arg) {
         Ok(sub) ->
           with_spec(extractor, sub)
+          |> descend_subcommand(arg)
           |> run(rest)
         _ ->
           add_arg(extractor, arg)

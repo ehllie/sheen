@@ -7,6 +7,7 @@ import sheen
 import sheen/flag
 import sheen/arg
 import sheen/named
+import sheen/subcommand
 
 pub fn main() {
   gleeunit.main()
@@ -111,6 +112,18 @@ pub type MyEnum {
   C
 }
 
+pub fn my_command() -> sheen.Command(MyEnum) {
+  use enum <-
+    arg.new()
+    |> arg.enum([#("A", A), #("B", B), #("C", C)])
+    |> arg.required
+
+  sheen.return({
+    use enum <- enum
+    sheen.valid(enum)
+  })
+}
+
 pub fn enum_parse_test() {
   let parser =
     sheen.new()
@@ -133,4 +146,21 @@ pub fn enum_parse_test() {
 
   sheen.run(parser, ["D"])
   |> should.be_error
+}
+
+pub fn subcommand_test() {
+  let parser =
+    sheen.new()
+    |> sheen.build({
+      use mc <- subcommand.optional("my-command", my_command())
+      sheen.return({
+        use mc <- mc
+        sheen.valid(mc)
+      })
+    })
+  let parser = should.be_ok(parser)
+
+  sheen.run(parser, ["my-command", "A"])
+  |> should.be_ok
+  |> should.equal(option.Some(A))
 }

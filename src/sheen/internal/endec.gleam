@@ -8,7 +8,7 @@ import gleam/dynamic
 import sheen/error.{type ParseError, type ParseResult}
 
 pub type EncoderInput {
-  ValidatorInput(
+  EncoderInput(
     flags: dict.Dict(String, Int),
     named: dict.Dict(String, List(String)),
     args: List(String),
@@ -28,6 +28,15 @@ pub type Decoder(a) {
 
 pub type DecodeBuilder(a, b) =
   fn(fn(a) -> Decoder(b)) -> Decoder(b)
+
+pub fn new_input() {
+  EncoderInput(
+    args: list.new(),
+    flags: dict.new(),
+    named: dict.new(),
+    subcommands: dict.new(),
+  )
+}
 
 pub fn insert_encoder(
   encoders: Encoders,
@@ -79,8 +88,7 @@ pub fn validate_and_run(
 
   let Decoder(decoder) = decoder
 
-  values
-  |> decoder
+  decoder(values)
 }
 
 pub fn valid(val: a) -> Decoder(a) {
