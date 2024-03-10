@@ -1,7 +1,6 @@
 import gleam/option.{None, Some}
 import gleam/list
 import gleam/result
-import gleam/dict
 import sheen/internal/command_builder as cb
 import sheen/internal/extractor
 import sheen/internal/endec
@@ -21,18 +20,7 @@ pub type Parser(a) {
 }
 
 pub fn new() -> ParserSpec {
-  ParserSpec(
-    name: None,
-    authors: list.new(),
-    cmd: cb.CommandSpec(
-      flags: dict.new(),
-      named: dict.new(),
-      args: list.new(),
-      subcommands: dict.new(),
-      description: None,
-    ),
-    version: None,
-  )
+  ParserSpec(name: None, authors: list.new(), cmd: cb.new_spec(), version: None)
 }
 
 pub fn name(to parser: ParserSpec, set name: String) {

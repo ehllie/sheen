@@ -1,7 +1,8 @@
 import gleam/dict
 import gleam/result
-import gleam/option
+import gleam/option.{None}
 import gleam/dynamic
+import gleam/list
 import sheen/error.{type BuildResult}
 import sheen/internal/endec
 
@@ -70,8 +71,18 @@ pub type Builder(a) {
 pub type Definition(a) {
   Definition(
     spec: CommandSpec,
-    validate: endec.Validator(a),
+    encode: endec.Encoder,
     decode: dynamic.Decoder(a),
+  )
+}
+
+pub fn new_spec() {
+  CommandSpec(
+    flags: dict.new(),
+    named: dict.new(),
+    args: list.new(),
+    subcommands: dict.new(),
+    description: None,
   )
 }
 
@@ -81,12 +92,11 @@ pub fn new(
   fn(cont: Continuation(a, b)) {
     fn(builder: Builder(Nil)) {
       use definition <- result.try(define(builder))
-      let Definition(spec: spec, validate: validate, decode: decode) =
-        definition
+      let Definition(spec: spec, encode: encode, decode: decode) = definition
 
       let Builder(encoders: encoders, ..) = builder
       let #(encoders, decode_builder) =
-        endec.insert_validator(encoders, validate, decode)
+        endec.insert_encoder(encoders, encode, decode)
       let builder = Builder(..builder, encoders: encoders, spec: spec)
 
       cont(decode_builder)(builder)

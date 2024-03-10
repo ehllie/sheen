@@ -150,17 +150,18 @@ fn build(
     use <- guard(conflict != "", Error(conflict))
     let cmd = cb.CommandSpec(..cmd, args: list.append(cmd.args, [spec]))
 
-    let validate = fn(input: endec.ValidatorInput) {
+    let encode = fn(input: endec.EncoderInput) {
       let values = list.drop(input.args, position)
       let values = case repeated {
         True -> values
         False -> list.take(values, 1)
       }
       map(parse, values)
+      |> result.map(dynamic.from)
     }
 
     let decode = decode_wrap(decode)
 
-    Ok(cb.Definition(cmd, validate, decode))
+    Ok(cb.Definition(cmd, encode, decode))
   })
 }

@@ -7,20 +7,20 @@ import gleam/int
 import gleam/dynamic
 import sheen/error.{type ParseError, type ParseResult}
 
-pub type ValidatorInput {
+pub type EncoderInput {
   ValidatorInput(
     flags: dict.Dict(String, Int),
     named: dict.Dict(String, List(String)),
     args: List(String),
-    subcommands: dict.Dict(String, ValidatorInput),
+    subcommands: dict.Dict(String, EncoderInput),
   )
 }
 
-pub type Validator(a) =
-  fn(ValidatorInput) -> ParseResult(a)
+pub type Encoder =
+  fn(EncoderInput) -> ParseResult(dynamic.Dynamic)
 
 pub type Encoders =
-  List(fn(ValidatorInput) -> ParseResult(dynamic.Dynamic))
+  List(Encoder)
 
 pub type Decoder(a) {
   Decoder(fn(List(dynamic.Dynamic)) -> Result(a, List(ParseError)))
@@ -29,17 +29,13 @@ pub type Decoder(a) {
 pub type DecodeBuilder(a, b) =
   fn(fn(a) -> Decoder(b)) -> Decoder(b)
 
-pub fn insert_validator(
+pub fn insert_encoder(
   encoders: Encoders,
-  validator: Validator(a),
+  encoder: Encoder,
   decoder: dynamic.Decoder(a),
-) -> #(Encoders, DecodeBuilder(a, b)) {
+) {
   let position = list.length(encoders)
   let path = ["values", "[" <> int.to_string(position) <> "]"]
-  let encoder = fn(input) {
-    validator(input)
-    |> result.map(dynamic.from)
-  }
 
   let builder = fn(cont) {
     Decoder(fn(values) {
@@ -70,7 +66,7 @@ pub fn insert_validator(
 }
 
 pub fn validate_and_run(
-  input: ValidatorInput,
+  input: EncoderInput,
   encoders: Encoders,
   decoder: Decoder(a),
 ) -> Result(a, List(ParseError)) {

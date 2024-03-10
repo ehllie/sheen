@@ -159,14 +159,15 @@ fn build(
     let named = dict.insert(cmd.named, name, spec)
     let cmd = cb.CommandSpec(..cmd, named: named)
 
-    let validate = fn(input: endec.ValidatorInput) {
+    let encode = fn(input: endec.EncoderInput) {
       dict.get(input.named, name)
       |> result.unwrap([])
       |> map(parse, _)
+      |> result.map(dynamic.from)
     }
 
     let decode = decode_wrapper(decode)
 
-    Ok(cb.Definition(cmd, validate, decode))
+    Ok(cb.Definition(cmd, encode, decode))
   })
 }

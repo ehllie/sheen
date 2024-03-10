@@ -75,13 +75,14 @@ fn build(
     let flags = dict.insert(cmd.flags, name, spec)
     let cmd = cb.CommandSpec(..cmd, flags: flags)
 
-    let validate = fn(input: endec.ValidatorInput) {
+    let encode = fn(input: endec.EncoderInput) {
       let count =
         dict.get(input.flags, name)
         |> result.unwrap(0)
       map(count)
+      |> result.map(dynamic.from)
     }
 
-    Ok(cb.Definition(cmd, validate, decode))
+    Ok(cb.Definition(cmd, encode, decode))
   })
 }

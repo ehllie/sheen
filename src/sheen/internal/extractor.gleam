@@ -34,7 +34,7 @@ pub type Extractor {
   Extractor(
     spec: ExtractorSpec,
     opts_ignored: Bool,
-    result: endec.ValidatorInput,
+    result: endec.EncoderInput,
     errors: List(ParseError),
   )
 }
@@ -185,7 +185,7 @@ fn ignore_opts(extractor: Extractor) -> Extractor {
 pub fn run(
   extractor: Extractor,
   args: List(String),
-) -> #(endec.ValidatorInput, List(ParseError)) {
+) -> #(endec.EncoderInput, List(ParseError)) {
   let Extractor(spec: spec, opts_ignored: opts_ignored, errors: errors, ..) =
     extractor
 
