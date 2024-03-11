@@ -1,7 +1,6 @@
 import gleam/option.{type Option, None, Some}
 import gleam/list
 import gleam/pair
-import gleam/io
 import gleam/bool
 import gleam/dict
 import gleam/set
@@ -156,17 +155,20 @@ pub fn required(commands: List(#(String, cb.Command(a))), cont) {
       }),
     )
 
+    let encoders = list.reverse(encoders)
+    let decoders = list.reverse(decoders)
+
     let encode = fn(input: endec.EncoderInput) {
       list.zip(names, encoders)
       |> list.index_map(fn(item, idx) {
         let #(name, encoders) = item
-        io.debug(input.subcommands)
         use input <- result.try(
           dict.get(input.subcommands, name)
           |> result.replace_error(error.ValidationError(
-            "A subcommand must be specified",
+            "A subcommand must be specified. Failed: " <> name,
           )),
         )
+
         list.map(encoders, function.apply1(_, input))
         |> result.all
         |> result.map(fn(dyn_list) { dynamic.from(#(idx, dyn_list)) })

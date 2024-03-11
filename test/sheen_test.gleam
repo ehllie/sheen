@@ -212,7 +212,6 @@ pub fn required_subcommand_test() {
   sheen.run(parser, ["string", "hello"])
   |> should.be_ok
 
-  // WHY DOES THIS GET THE INPUT FROM THE PREVIOUS RUN?
   sheen.run(parser, ["number", "42"])
   |> should.be_ok
 
