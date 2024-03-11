@@ -1,6 +1,13 @@
 {
   inputs = {
-    nixpkgs.url = "github:ehllie/nixpkgs/gleam";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    gleam = {
+      url = "github:ehllie/gleam/nix-flake";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        parts.follows = "parts";
+      };
+    };
     devenv = {
       url = "github:cachix/devenv";
       inputs.nixpkgs.follows = "nixpkgs";
