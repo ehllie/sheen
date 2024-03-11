@@ -3,6 +3,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/list
 import gleam/result.{unwrap}
 import gleam/string
+import gleam/io
 import gleam/bool.{guard}
 import sheen/internal/command_builder as cb
 import sheen/internal/endec

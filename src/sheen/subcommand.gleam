@@ -1,13 +1,17 @@
-// pub fn optional(subcommands)
 import gleam/option.{type Option, None, Some}
 import gleam/list
+import gleam/pair
+import gleam/io
 import gleam/bool
 import gleam/dict
+import gleam/set
+import gleam/string
 import gleam/dynamic
 import gleam/result
 import gleam/function
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
+import sheen/error
 
 pub type Builder(a) {
   Builder(name: String, command: cb.Command(a))
@@ -86,6 +90,110 @@ pub fn optional(
         }
         None -> Ok(None)
       }
+    }
+
+    Ok(cb.Definition(cmd, encode, decode))
+  })(cont)
+}
+
+pub fn required(commands: List(#(String, cb.Command(a))), cont) {
+  cb.new(fn(builder) {
+    let subcommands = builder.spec.subcommands
+
+    use <- bool.guard(
+      dict.new() != subcommands,
+      Error(
+        "Required subcommands can only be used if no subcommands were defined previously",
+      ),
+    )
+
+    use <- bool.guard(
+      [] == commands,
+      Error("You must define at least one subcommand to require"),
+    )
+
+    let names = list.map(commands, pair.first)
+
+    let #(_, non_unique) =
+      list.fold(names, #(set.new(), []), fn(acc, name) {
+        let #(names, non_unique) = acc
+        case set.contains(names, name) {
+          True -> #(names, [name, ..non_unique])
+          False -> #(set.insert(names, name), non_unique)
+        }
+      })
+
+    use <- bool.guard(
+      [] != non_unique,
+      Error({
+        "Subcommands defined multiple times: " <> string.join(non_unique, ", ")
+      }),
+    )
+
+    use #(cmd, encoders, decoders) <- result.try(
+      list.fold(commands, Ok(#(builder.spec, [], [])), fn(acc, subcommand) {
+        use #(cmd_spec, encoders, decoders) <- result.try(acc)
+        let #(name, cmd) = subcommand
+        let inner_builder =
+          cb.Builder(
+            spec: cb.new_spec(),
+            encoders: [],
+            decoder: endec.Decoder(fn(_) { Ok(Nil) }),
+          )
+        use inner_builder <- result.try(cmd(inner_builder))
+        let cb.Builder(spec, new_encoders, decoder) = inner_builder
+        let cmd =
+          cb.CommandSpec(
+            ..cmd_spec,
+            subcommands: dict.insert(
+              cmd_spec.subcommands,
+              name,
+              cb.Required(spec),
+            ),
+          )
+
+        Ok(#(cmd, [new_encoders, ..encoders], [decoder, ..decoders]))
+      }),
+    )
+
+    let encode = fn(input: endec.EncoderInput) {
+      list.zip(names, encoders)
+      |> list.index_map(fn(item, idx) {
+        let #(name, encoders) = item
+        io.debug(input.subcommands)
+        use input <- result.try(
+          dict.get(input.subcommands, name)
+          |> result.replace_error(error.ValidationError(
+            "A subcommand must be specified",
+          )),
+        )
+        list.map(encoders, function.apply1(_, input))
+        |> result.all
+        |> result.map(fn(dyn_list) { dynamic.from(#(idx, dyn_list)) })
+      })
+      |> list.reduce(result.or)
+      |> result.replace_error(error.InternalError(
+        "There were no subcommands passed into the required subcommand builder. This should have been caught earlier",
+      ))
+      |> result.flatten
+    }
+
+    let decode = fn(dyn) {
+      use #(idx, dyn_list) <- result.try(
+        dyn
+        |> dynamic.decode2(
+          pair.new,
+          dynamic.element(0, dynamic.int),
+          dynamic.element(1, dynamic.list(dynamic.dynamic)),
+        ),
+      )
+      use endec.Decoder(decoder) <- result.try(
+        list.at(decoders, idx)
+        |> result.replace_error([]),
+      )
+
+      decoder(dyn_list)
+      |> result.replace_error([])
     }
 
     Ok(cb.Definition(cmd, encode, decode))

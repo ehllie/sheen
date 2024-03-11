@@ -58,41 +58,43 @@ pub type StructuredInput {
   StructuredInput(verbosity: Int, file: String, nums: List(Int), multi: Int)
 }
 
+fn structured_cmd() -> sheen.Command(StructuredInput) {
+  use verbosity <-
+    flag.new("verbose")
+    |> flag.count()
+
+  use file <-
+    arg.new()
+    |> arg.required()
+
+  use nums <-
+    arg.new()
+    |> arg.integer()
+    |> arg.repeated()
+
+  use multi <-
+    named.new("multi")
+    |> named.integer()
+    |> named.optional()
+
+  sheen.return({
+    use verbosity <- verbosity
+    use file <- file
+    use nums <- nums
+    use multi <- multi
+    sheen.valid(StructuredInput(
+      verbosity: verbosity,
+      file: file,
+      nums: nums,
+      multi: option.unwrap(multi, 0),
+    ))
+  })
+}
+
 pub fn structured_parse_test() {
   let parser =
     sheen.new()
-    |> sheen.build({
-      use verbosity <-
-        flag.new("verbose")
-        |> flag.count()
-
-      use file <-
-        arg.new()
-        |> arg.required()
-
-      use nums <-
-        arg.new()
-        |> arg.integer()
-        |> arg.repeated()
-
-      use multi <-
-        named.new("multi")
-        |> named.integer()
-        |> named.optional()
-
-      sheen.return({
-        use verbosity <- verbosity
-        use file <- file
-        use nums <- nums
-        use multi <- multi
-        sheen.valid(StructuredInput(
-          verbosity: verbosity,
-          file: file,
-          nums: nums,
-          multi: option.unwrap(multi, 0),
-        ))
-      })
-    })
+    |> sheen.build({ structured_cmd() })
 
   let parser = should.be_ok(parser)
 
@@ -163,4 +165,57 @@ pub fn subcommand_test() {
   sheen.run(parser, ["my-command", "A"])
   |> should.be_ok
   |> should.equal(option.Some(A))
+}
+
+pub type Variant {
+  StringVariant(String)
+  NumberVariant(Int)
+}
+
+fn variant_string_cmd() -> sheen.Command(Variant) {
+  use string <-
+    arg.new()
+    |> arg.required()
+  sheen.return({
+    use string <- string
+    sheen.valid(StringVariant(string))
+  })
+}
+
+fn variant_number_cmd() -> sheen.Command(Variant) {
+  use number <-
+    arg.new()
+    |> arg.integer()
+    |> arg.required()
+  sheen.return({
+    use number <- number
+    sheen.valid(NumberVariant(number))
+  })
+}
+
+pub fn required_subcommand_test() {
+  let parser =
+    sheen.new()
+    |> sheen.build({
+      use variant <- subcommand.required([
+        #("string", variant_string_cmd()),
+        #("number", variant_number_cmd()),
+      ])
+      sheen.return({
+        use variant <- variant
+        sheen.valid(variant)
+      })
+    })
+
+  let parser = should.be_ok(parser)
+
+  sheen.run(parser, ["string", "hello"])
+  |> should.be_ok
+
+  // WHY DOES THIS GET THE INPUT FROM THE PREVIOUS RUN?
+  sheen.run(parser, ["number", "42"])
+  |> should.be_ok
+
+  sheen.run(parser, ["unknown", "42"])
+  |> should.be_error
 }

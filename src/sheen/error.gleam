@@ -10,6 +10,7 @@ pub type ParseError {
   DecodeError(dynamic.DecodeError)
   ValidationError(String)
   ExtractionError(ExtractionError)
+  InternalError(String)
 }
 
 pub type ParseResult(a) =
