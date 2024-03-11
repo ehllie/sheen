@@ -68,9 +68,9 @@ pub fn main() {
       todo
     }
     Error(errors) -> {
-      // Sheen collects all errors and returns them as a list
+      // Sheen collects all errors and returns them as a list.
       // Later I will add a way to pretty print them, and then
-      // show usage information
+      // show usage information.
       todo
     }
   }

@@ -139,10 +139,11 @@ fn build(
       Error("Arguments can be either optional or repeated, not both"),
     )
 
+    let required = !optional || !repeated
     let conflict = case list.last(cmd.args) {
       Ok(cb.ArgSpec(repeated: True, ..)) ->
         "Can't add a positional argument after a repeated one"
-      Ok(cb.ArgSpec(optional: True, ..)) if !optional || !repeated ->
+      Ok(cb.ArgSpec(optional: True, ..)) if required ->
         "Can't add a required positional argument after an optional one"
       _ -> ""
     }
