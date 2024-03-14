@@ -47,7 +47,8 @@ pub fn build(
 ) -> Result(Parser(a), BuildError) {
   let ParserSpec(cmd: cmd, ..) = parser
   let builder = cb.Builder(spec: cmd, encoders: [], decoder: valid(Nil))
-  use cb.Builder(spec, encoders, decoder) <- result.try(command(builder))
+  let cb.Command(cmd) = command
+  use cb.Builder(spec, encoders, decoder) <- result.try(cmd(builder))
   let spec = ParserSpec(..parser, cmd: spec)
   Ok(Parser(spec: spec, encoders: encoders, decoder: decoder))
 }
@@ -56,18 +57,19 @@ pub type Command(a) =
   cb.Command(a)
 
 pub fn describe(description: String, cont: fn() -> Command(a)) -> Command(a) {
-  fn(builder: cb.Builder(Nil)) {
+  cb.Command(fn(builder: cb.Builder(Nil)) {
     let spec = cb.CommandSpec(..builder.spec, description: Some(description))
-    cont()(cb.Builder(..builder, spec: spec))
-  }
+    let cb.Command(cmd) = cont()
+    cmd(cb.Builder(..builder, spec: spec))
+  })
 }
 
 pub fn return(decoder: endec.Decoder(a)) -> Command(a) {
-  fn(builder: cb.Builder(Nil)) {
+  cb.Command(fn(builder: cb.Builder(Nil)) {
     let cb.Builder(spec, encoders, ..) = builder
     let builder = cb.Builder(spec: spec, encoders: encoders, decoder: decoder)
     Ok(builder)
-  }
+  })
 }
 
 pub fn valid(value: a) -> endec.Decoder(a) {
@@ -415,6 +417,6 @@ pub fn usage(spec: ParserSpec) {
   let header =
     list.concat([option.values([header, authors])])
     |> doc.join(doc.line)
-  let usage = command_usage(spec.cmd, option.unwrap(spec.name, "<CMD>"))
+  let usage = command_usage(cmd, option.unwrap(spec.name, "<CMD>"))
   doc.join([header, usage], doc.lines(2))
 }

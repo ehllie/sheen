@@ -1,16 +1,16 @@
-import gleam/option.{type Option, None, Some}
-import gleam/list
-import gleam/pair
 import gleam/bool
 import gleam/dict
+import gleam/dynamic
+import gleam/function
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/pair
+import gleam/result
 import gleam/set
 import gleam/string
-import gleam/dynamic
-import gleam/result
-import gleam/function
+import sheen/error
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
-import sheen/error
 
 pub type Builder(a) {
   Builder(name: String, command: cb.Command(a))
@@ -50,7 +50,8 @@ pub fn optional(
         encoders: [],
         decoder: endec.Decoder(fn(_) { Ok(Nil) }),
       )
-    use inner_builder <- result.try(subcommand(inner_builder))
+    let cb.Command(cmd) = subcommand
+    use inner_builder <- result.try(cmd(inner_builder))
     let cb.Builder(spec, encoders, decoder) = inner_builder
     let cmd =
       cb.CommandSpec(
@@ -132,7 +133,7 @@ pub fn required(commands: List(#(String, cb.Command(a))), cont) {
     use #(cmd, encoders, decoders) <- result.try(
       list.fold(commands, Ok(#(builder.spec, [], [])), fn(acc, subcommand) {
         use #(cmd_spec, encoders, decoders) <- result.try(acc)
-        let #(name, cmd) = subcommand
+        let #(name, cb.Command(cmd)) = subcommand
         let inner_builder =
           cb.Builder(
             spec: cb.new_spec(),
