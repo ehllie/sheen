@@ -1,0 +1,24 @@
+---
+version: 1.1.0
+title: basic_usage_test
+file: ./test/sheen_test.gleam
+test_name: basic_usage_test
+---
+my_cli_app 0.1.0
+Authors: Lucy, Ellie
+
+This command has positional and named arguments, flags and subcommands.
+
+Usage:
+  my_cli_app <FILE> [options] [subcommand]
+
+Arguments:
+  FILE  A file. This has a long description. The words should wrap to new line,
+        but stay aligned to the help column
+
+Options:
+  -v  --verbose             Increase verbosity
+  -n  --num      [INTEGER]  A number
+
+Subcommands:
+  my-command  This command parses an enum

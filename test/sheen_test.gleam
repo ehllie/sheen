@@ -1,11 +1,14 @@
+import birdie
+import glam/doc
 import gleam/dict
+import gleam/io
 import gleam/list
 import gleam/option
 import gleeunit
 import gleeunit/should
 import sheen
-import sheen/flag
 import sheen/arg
+import sheen/flag
 import sheen/named
 import sheen/subcommand
 
@@ -115,6 +118,8 @@ pub type MyEnum {
 }
 
 pub fn my_command() -> sheen.Command(MyEnum) {
+  use <- sheen.describe("This command parses an enum")
+
   use enum <-
     arg.new()
     |> arg.enum([#("A", A), #("B", B), #("C", C)])
@@ -217,4 +222,43 @@ pub fn required_subcommand_test() {
 
   sheen.run(parser, ["unknown", "42"])
   |> should.be_error
+}
+
+pub fn basic_usage_test() {
+  let parser =
+    sheen.new()
+    |> sheen.name("my_cli_app")
+    |> sheen.version("0.1.0")
+    |> sheen.authors(["Lucy", "Ellie"])
+    |> sheen.build({
+      use <- sheen.describe(
+        "This command has positional and named arguments, flags and subcommands.",
+      )
+      use _ <-
+        flag.new("verbose")
+        |> flag.help("Increase verbosity")
+        |> flag.count()
+      use _ <-
+        named.new("num")
+        |> named.integer()
+        |> named.help("A number")
+        |> named.optional()
+      use _ <-
+        arg.new()
+        |> arg.help(
+          "A file. This has a long description. The words should wrap to new line, but stay aligned to the help column",
+        )
+        |> arg.display("FILE")
+        |> arg.required()
+      use _ <- subcommand.optional("my-command", my_command())
+      sheen.return(sheen.valid(Nil))
+    })
+
+  let parser = should.be_ok(parser)
+
+  let usage =
+    sheen.usage(parser.spec)
+    |> doc.to_string(80)
+
+  birdie.snap(usage, "basic_usage_test")
 }

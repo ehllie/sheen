@@ -9,6 +9,8 @@ gleam add sheen
 
 Sheen is a library for creating command line argument parsers. It has a convenient and type safe API.
 
+## THE API IS CURRENTLY UNSTABLE. I'D ADVISE AGAINST DEPENDING ON THIS PACKAGE BEFORE THE RELEASE OF VERSION 1.0.0
+
 ```gleam
 import argv
 import sheen
