@@ -1,10 +1,30 @@
+import gleam/bool
 import gleam/dynamic
+import gleam/list
+import gleam/result
 
-pub type BuildError =
-  String
+pub type BuildError {
+  RuleConflict(String)
+}
 
 pub type BuildResult(a) =
-  Result(a, BuildError)
+  Result(a, List(BuildError))
+
+pub fn rule_conflict(
+  requirement: Bool,
+  conflict: String,
+  alternative: fn() -> BuildResult(a),
+) -> BuildResult(a) {
+  bool.guard(requirement, Error([RuleConflict(conflict)]), alternative)
+}
+
+pub fn as_conflict(res: Result(a, b), conflict: String) -> BuildResult(a) {
+  result.replace_error(res, [RuleConflict(conflict)])
+}
+
+pub fn from_decode_error(err: List(dynamic.DecodeError)) -> List(ParseError) {
+  list.map(err, DecodeError)
+}
 
 pub type ParseError {
   DecodeError(dynamic.DecodeError)
@@ -14,7 +34,7 @@ pub type ParseError {
 }
 
 pub type ParseResult(a) =
-  Result(a, ParseError)
+  Result(a, List(ParseError))
 
 pub type ExtractionError {
   /// When a long option is not recognised.

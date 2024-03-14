@@ -1,10 +1,9 @@
-import gleam/bool.{guard}
 import gleam/dict
-import gleam/result
-import gleam/option.{None, Some}
-import gleam/string
 import gleam/dynamic
-import sheen/error
+import gleam/option.{None, Some}
+import gleam/result
+import gleam/string
+import sheen/error.{as_conflict, rule_conflict}
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
 
@@ -41,17 +40,17 @@ pub fn help(builder: Builder, help: String) -> Builder {
 }
 
 pub fn count(builder: Builder) -> cb.BuilderFn(Int, a) {
-  build(builder, Ok, dynamic.int)
+  build(builder, Ok, endec.decode_int)
 }
 
 pub fn boolean(builder: Builder) -> cb.BuilderFn(Bool, a) {
-  build(builder, fn(count: Int) { Ok(count > 0) }, dynamic.bool)
+  build(builder, fn(count: Int) { Ok(count > 0) }, endec.decode_bool)
 }
 
 fn build(
   builder: Builder,
   map: fn(Int) -> error.ParseResult(a),
-  decode: dynamic.Decoder(a),
+  decode: endec.DecodeFn(a),
 ) -> cb.BuilderFn(a, b) {
   cb.new(fn(cmd_builder: cb.Builder(Nil)) {
     let Builder(name, spec) = builder
@@ -60,15 +59,15 @@ fn build(
 
     use first <- result.try(
       string.first(name)
-      |> result.replace_error("Flag name cannot be empty"),
+      |> as_conflict("Flag name cannot be empty"),
     )
 
     let long = option.unwrap(long, name)
     let short = option.unwrap(short, first)
 
-    use <- guard(
+    use <- rule_conflict(
       dict.has_key(cmd.flags, name),
-      Error("Flag " <> name <> " already defined"),
+      "Flag " <> name <> " already defined",
     )
 
     let spec = cb.FlagSpec(..spec, long: Some(long), short: Some(short))

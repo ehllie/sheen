@@ -7,7 +7,7 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import gleam/string_builder as sb
-import sheen/error.{type BuildError, type ParseError}
+import sheen/error.{type ParseError}
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
 import sheen/internal/extractor
@@ -44,7 +44,7 @@ pub fn version(to parser: ParserSpec, set version: String) {
 pub fn build(
   from parser: ParserSpec,
   with command: cb.Command(a),
-) -> Result(Parser(a), BuildError) {
+) -> error.BuildResult(Parser(a)) {
   let ParserSpec(cmd: cmd, ..) = parser
   let builder = cb.Builder(spec: cmd, encoders: [], decoder: valid(Nil))
   let cb.Command(cmd) = command

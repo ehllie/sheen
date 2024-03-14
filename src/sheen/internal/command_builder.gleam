@@ -1,8 +1,6 @@
 import gleam/dict
-import gleam/dynamic
 import gleam/list
 import gleam/option.{None}
-import gleam/result
 import sheen/error.{type BuildResult}
 import sheen/internal/endec
 
@@ -73,7 +71,7 @@ pub type Definition(a) {
   Definition(
     spec: CommandSpec,
     encode: endec.Encoder,
-    decode: dynamic.Decoder(a),
+    decode: endec.DecodeFn(a),
   )
 }
 
@@ -92,16 +90,34 @@ pub fn new(
 ) -> BuilderFn(a, b) {
   fn(cont: Continuation(a, b)) {
     Command(fn(builder: Builder(Nil)) {
-      use definition <- result.try(define(builder))
-      let Definition(spec: spec, encode: encode, decode: decode) = definition
+      case define(builder) {
+        Ok(definition) -> {
+          let Definition(spec: spec, encode: encode, decode: decode) =
+            definition
 
-      let Builder(encoders: encoders, ..) = builder
-      let #(encoders, decode_builder) =
-        endec.insert_encoder(encoders, encode, decode)
-      let builder = Builder(..builder, encoders: encoders, spec: spec)
+          let Builder(encoders: encoders, ..) = builder
+          let #(encoders, decode_builder) =
+            endec.insert_encoder(encoders, encode, decode)
+          let builder = Builder(..builder, encoders: encoders, spec: spec)
 
-      let Command(cmd) = cont(decode_builder)
-      cmd(builder)
+          let Command(cmd) = cont(decode_builder)
+          cmd(builder)
+        }
+        Error(define_errors) -> {
+          let fake_builder = fn(_) {
+            endec.Decoder(fn(_) { Error([error.InternalError("")]) })
+          }
+          let Command(cmd) = cont(fake_builder)
+          case cmd(builder) {
+            Ok(_) -> {
+              Error(define_errors)
+            }
+            Error(errors) -> {
+              Error(list.append(define_errors, errors))
+            }
+          }
+        }
+      }
     })
   }
 }

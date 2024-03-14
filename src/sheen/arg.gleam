@@ -1,13 +1,10 @@
-import gleam/bool.{guard}
-import gleam/result
-import gleam/list
-import gleam/string
-import gleam/option.{type Option, None, Some}
-import gleam/int
 import gleam/dynamic
-import gleam/dict
+import gleam/int
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
+import sheen/error.{from_decode_error, rule_conflict}
 import sheen/internal/command_builder as cb
-import sheen/error
 import sheen/internal/endec
 
 pub opaque type Builder(a) {
@@ -48,7 +45,12 @@ pub fn repeated(builder: Builder(a)) -> cb.BuilderFn(List(a), b) {
       list.map(values, parser)
       |> result.all
     },
-    fn(decoder) { dynamic.list(decoder) },
+    fn(decoder) {
+      fn(dyn) {
+        dynamic.list(decoder)(dyn)
+        |> result.map_error(from_decode_error)
+      }
+    },
   )
 }
 
@@ -58,10 +60,15 @@ pub fn required(builder: Builder(a)) -> cb.BuilderFn(a, b) {
     fn(parser, values) {
       case values {
         [value] -> parser(value)
-        _ -> Error(error.ValidationError("Expected exactly one value"))
+        _ -> Error([error.ValidationError("Expected exactly one value")])
       }
     },
-    fn(decoder) { decoder },
+    fn(decoder) {
+      fn(dyn) {
+        decoder(dyn)
+        |> result.map_error(from_decode_error)
+      }
+    },
   )
 }
 
@@ -74,10 +81,15 @@ pub fn optional(builder: Builder(a)) -> cb.BuilderFn(Option(a), b) {
           parser(value)
           |> result.map(Some)
         [] -> Ok(None)
-        _ -> Error(error.ValidationError("Expected at most one value"))
+        _ -> Error([error.ValidationError("Expected at most one value")])
       }
     },
-    fn(decoder) { dynamic.optional(decoder) },
+    fn(decoder) {
+      fn(dyn) {
+        dynamic.optional(decoder)(dyn)
+        |> result.map_error(from_decode_error)
+      }
+    },
   )
 }
 
@@ -90,7 +102,7 @@ pub fn integer(builder: Builder(String)) -> Builder(Int) {
     parse: fn(value) {
       case int.parse(value) {
         Ok(value) -> Ok(value)
-        Error(_) -> Error(error.ValidationError("Expected an integer"))
+        Error(_) -> Error([error.ValidationError("Expected an integer")])
       }
     },
     decode: dynamic.int,
@@ -98,27 +110,15 @@ pub fn integer(builder: Builder(String)) -> Builder(Int) {
 }
 
 pub fn enum(builder: Builder(String), values: List(#(String, a))) -> Builder(a) {
-  let word_map = dict.from_list(values)
-  let dyn_map =
-    dict.values(word_map)
-    |> list.map(fn(val) { #(dynamic.from(val), val) })
-    |> dict.from_list
+  let #(parse, decode) = endec.enum(values)
 
   Builder(
     spec: cb.ArgSpec(
       ..builder.spec,
       display: option.or(builder.spec.display, Some("ENUM")),
     ),
-    parse: fn(value) {
-      dict.get(word_map, value)
-      |> result.replace_error(error.ValidationError(
-        "Expected one of: " <> string.join(dict.keys(word_map), ", "),
-      ))
-    },
-    decode: fn(dyn) {
-      dict.get(dyn_map, dyn)
-      |> result.replace_error([])
-    },
+    parse: parse,
+    decode: decode,
   )
 }
 
@@ -126,7 +126,7 @@ fn build(
   builder: Builder(a),
   map: fn(fn(String) -> error.ParseResult(a), List(String)) ->
     error.ParseResult(b),
-  decode_wrap: fn(dynamic.Decoder(a)) -> dynamic.Decoder(b),
+  decode_wrap: fn(dynamic.Decoder(a)) -> endec.DecodeFn(b),
 ) -> cb.BuilderFn(b, c) {
   cb.new(fn(cmd_builder: cb.Builder(Nil)) {
     let Builder(spec, parse, decode) = builder
@@ -134,9 +134,9 @@ fn build(
     let cb.Builder(spec: cmd, ..) = cmd_builder
     let position = list.length(cmd.args)
 
-    use <- guard(
+    use <- rule_conflict(
       optional && repeated,
-      Error("Arguments can be either optional or repeated, not both"),
+      "Arguments can be either optional or repeated, not both",
     )
 
     let required = !optional || !repeated
@@ -148,7 +148,7 @@ fn build(
       _ -> ""
     }
 
-    use <- guard(conflict != "", Error(conflict))
+    use <- rule_conflict(conflict != "", conflict)
     let cmd = cb.CommandSpec(..cmd, args: list.append(cmd.args, [spec]))
 
     let encode = fn(input: endec.EncoderInput) {
