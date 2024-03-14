@@ -3,9 +3,9 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import sheen/error.{from_decode_error, rule_conflict}
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
+import sheen/internal/error.{from_decode_error, rule_conflict}
 
 pub opaque type Builder(a) {
   Builder(

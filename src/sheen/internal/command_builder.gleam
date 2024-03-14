@@ -1,8 +1,8 @@
 import gleam/dict
 import gleam/list
 import gleam/option.{None}
-import sheen/error.{type BuildResult}
 import sheen/internal/endec
+import sheen/internal/error.{type BuildResult}
 
 pub type FlagSpec {
   FlagSpec(

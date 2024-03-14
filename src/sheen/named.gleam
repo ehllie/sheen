@@ -5,9 +5,9 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
-import sheen/error.{as_conflict, rule_conflict}
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
+import sheen/internal/error.{as_conflict, rule_conflict}
 
 pub opaque type Builder(a) {
   Builder(

@@ -6,11 +6,11 @@ import gleam/pair
 import gleam/result
 import gleam/set
 import gleam/string
-import sheen/error.{rule_conflict}
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
+import sheen/internal/error.{rule_conflict}
 
-pub type Builder(a) {
+pub opaque type Builder(a) {
   Builder(name: String, command: cb.Command(a))
 }
 

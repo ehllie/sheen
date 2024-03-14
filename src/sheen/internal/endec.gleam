@@ -7,7 +7,7 @@ import gleam/list
 import gleam/option
 import gleam/result
 import gleam/string
-import sheen/error.{type ParseError, type ParseResult}
+import sheen/internal/error.{type ParseError, type ParseResult}
 
 pub type EncoderInput {
   EncoderInput(

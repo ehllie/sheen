@@ -7,9 +7,9 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import gleam/string_builder as sb
-import sheen/error.{type ParseError}
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
+import sheen/internal/error.{type ParseError}
 import sheen/internal/extractor
 
 pub type ParserSpec {
@@ -41,7 +41,7 @@ pub fn version(to parser: ParserSpec, set version: String) {
   ParserSpec(..parser, version: Some(version))
 }
 
-pub fn build(
+pub fn try_build(
   from parser: ParserSpec,
   with command: cb.Command(a),
 ) -> error.BuildResult(Parser(a)) {
@@ -79,7 +79,7 @@ pub fn valid(value: a) -> endec.Decoder(a) {
 pub type ParseResult(a) =
   Result(a, List(ParseError))
 
-pub fn run(parser: Parser(a), args: List(String)) -> ParseResult(a) {
+pub fn try_run(parser: Parser(a), args: List(String)) -> ParseResult(a) {
   let Parser(spec, encoders, decoder) = parser
   let ParserSpec(cmd, ..) = spec
   let #(result, errors) =

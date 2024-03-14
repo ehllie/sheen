@@ -1,12 +1,12 @@
+import gleam/bool.{guard}
 import gleam/dict
-import gleam/option.{type Option, None, Some}
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result.{unwrap}
 import gleam/string
-import gleam/bool.{guard}
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
-import sheen/error.{type ExtractionError, type ParseError}
+import sheen/internal/error.{type ExtractionError, type ParseError}
 
 pub type OptionKind {
   /// This is a flag, and will not consume the next argument.

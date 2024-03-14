@@ -21,7 +21,7 @@ pub fn parser_build_test() {
     |> sheen.name("Test command")
     |> sheen.version("0.1.0")
     |> sheen.authors(["Ellie"])
-    |> sheen.build({
+    |> sheen.try_build({
       use verbosity <-
         flag.new("verbose")
         |> flag.count()
@@ -39,13 +39,13 @@ pub fn parser_build_test() {
   |> dict.size
   |> should.equal(2)
 
-  sheen.run(parser, ["-vv", "--help"])
+  sheen.try_run(parser, ["-vv", "--help"])
   |> should.be_ok
 
-  sheen.run(parser, ["--unknown-flag"])
+  sheen.try_run(parser, ["--unknown-flag"])
   |> should.be_error
 
-  sheen.run(parser, ["too", "many"])
+  sheen.try_run(parser, ["too", "many"])
   |> should.be_error
 }
 
@@ -96,15 +96,17 @@ fn structured_cmd() -> sheen.Command(StructuredInput) {
 pub fn structured_parse_test() {
   let parser =
     sheen.new()
-    |> sheen.build({ structured_cmd() })
+    |> sheen.try_build({ structured_cmd() })
 
   let parser = should.be_ok(parser)
 
-  sheen.run(parser, ["-vv", "file", "42", "8", "--multi", "4"])
+  sheen.try_run(parser, ["-vv", "file", "42", "8", "--multi", "4"])
   |> should.be_ok
   |> should.equal(StructuredInput(2, "file", [42, 8], 4))
 
-  sheen.run(parser, ["file", "42", "not-a-number", "--multi", "not-a-number"])
+  sheen.try_run(parser, [
+    "file", "42", "not-a-number", "--multi", "not-a-number",
+  ])
   |> should.be_error
   |> list.length
   |> should.equal(2)
@@ -133,7 +135,7 @@ pub fn my_command() -> sheen.Command(MyEnum) {
 pub fn enum_parse_test() {
   let parser =
     sheen.new()
-    |> sheen.build({
+    |> sheen.try_build({
       use enum <-
         arg.new()
         |> arg.enum([#("A", A), #("B", B), #("C", C)])
@@ -146,18 +148,18 @@ pub fn enum_parse_test() {
     })
 
   let parser = should.be_ok(parser)
-  sheen.run(parser, ["A"])
+  sheen.try_run(parser, ["A"])
   |> should.be_ok
   |> should.equal(A)
 
-  sheen.run(parser, ["D"])
+  sheen.try_run(parser, ["D"])
   |> should.be_error
 }
 
 pub fn subcommand_test() {
   let parser =
     sheen.new()
-    |> sheen.build({
+    |> sheen.try_build({
       use mc <- subcommand.optional("my-command", my_command())
       sheen.return({
         use mc <- mc
@@ -166,7 +168,7 @@ pub fn subcommand_test() {
     })
   let parser = should.be_ok(parser)
 
-  sheen.run(parser, ["my-command", "A"])
+  sheen.try_run(parser, ["my-command", "A"])
   |> should.be_ok
   |> should.equal(option.Some(A))
 }
@@ -200,7 +202,7 @@ fn variant_number_cmd() -> sheen.Command(Variant) {
 pub fn required_subcommand_test() {
   let parser =
     sheen.new()
-    |> sheen.build({
+    |> sheen.try_build({
       use variant <- subcommand.required([
         #("string", variant_string_cmd()),
         #("number", variant_number_cmd()),
@@ -213,13 +215,13 @@ pub fn required_subcommand_test() {
 
   let parser = should.be_ok(parser)
 
-  sheen.run(parser, ["string", "hello"])
+  sheen.try_run(parser, ["string", "hello"])
   |> should.be_ok
 
-  sheen.run(parser, ["number", "42"])
+  sheen.try_run(parser, ["number", "42"])
   |> should.be_ok
 
-  sheen.run(parser, ["unknown", "42"])
+  sheen.try_run(parser, ["unknown", "42"])
   |> should.be_error
 }
 
@@ -229,7 +231,7 @@ pub fn basic_usage_test() {
     |> sheen.name("my_cli_app")
     |> sheen.version("0.1.0")
     |> sheen.authors(["Lucy", "Ellie"])
-    |> sheen.build({
+    |> sheen.try_build({
       use <- sheen.describe(
         "This command has positional and named arguments, flags and subcommands.",
       )
