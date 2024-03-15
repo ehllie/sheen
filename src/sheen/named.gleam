@@ -141,6 +141,7 @@ fn build(
     let long = option.unwrap(long, name)
     let short = option.unwrap(short, first)
 
+    // TODO: Check if short and long flags are used
     use <- rule_conflict(
       dict.has_key(cmd.named, name),
       "Argument " <> name <> " already defined",

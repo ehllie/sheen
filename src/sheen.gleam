@@ -1,6 +1,8 @@
 import glam/doc.{type Document}
 import gleam/dict
+import gleam/dynamic
 import gleam/int.{max}
+import gleam/io
 import gleam/iterator
 import gleam/list
 import gleam/option.{None, Some}
@@ -53,6 +55,29 @@ pub fn try_build(
   Ok(Parser(spec: spec, encoders: encoders, decoder: decoder))
 }
 
+pub fn build(from parser: ParserSpec, with command: cb.Command(a)) -> Parser(a) {
+  case try_build(parser, command) {
+    Ok(parser) -> parser
+    Error(errors) -> {
+      build_errors_to_doc(errors)
+      |> doc.to_string(80)
+      |> io.println_error()
+
+      panic as "Failed to build parser"
+    }
+  }
+}
+
+pub fn build_errors_to_doc(errors: List(error.BuildError)) -> Document {
+  let error_docs =
+    list.map(errors, fn(error) {
+      case error {
+        error.RuleConflict(message) -> flexible_text(message)
+      }
+    })
+  doc.join(error_docs, doc.line)
+}
+
 pub type Command(a) =
   cb.Command(a)
 
@@ -93,6 +118,70 @@ pub fn try_run(parser: Parser(a), args: List(String)) -> ParseResult(a) {
 
     errors -> Error(errors)
   }
+}
+
+pub fn run(parser: Parser(a), args: List(String)) -> a {
+  case try_run(parser, args) {
+    Ok(value) -> value
+    Error(errors) -> {
+      parse_errors_to_doc(errors)
+      |> doc.to_string(80)
+      |> io.println_error()
+      panic as "Failed to parse arguments"
+    }
+  }
+}
+
+pub fn parse_errors_to_doc(errors: List(error.ParseError)) -> Document {
+  list.map(errors, fn(error) {
+    case error {
+      error.DecodeError(de) -> {
+        let dynamic.DecodeError(expected: expected, found: found, ..) = de
+
+        let expected =
+          [doc.from_string("- Expected:"), doc.space, flexible_text(expected)]
+          |> doc.concat()
+
+        let found =
+          [doc.from_string("- Found:"), doc.space, flexible_text(found)]
+          |> doc.concat()
+
+        [doc.from_string("Decode error:"), expected, found]
+        |> doc.join(doc.soft_break)
+        |> doc.nest(2)
+        |> doc.force_break()
+      }
+      error.ValidationError(ve) ->
+        [doc.from_string("Validation error:"), flexible_text(ve)]
+        |> doc.join(doc.space)
+        |> doc.nest(2)
+      error.InternalError(ie) ->
+        [doc.from_string("Internal error:"), flexible_text(ie)]
+        |> doc.join(doc.space)
+        |> doc.nest(2)
+      error.ExtractionError(error.UnexpectedArgument(arg)) ->
+        [doc.from_string("Unexpected argument:"), doc.from_string(arg)]
+        |> doc.join(doc.space)
+        |> doc.nest(2)
+      error.ExtractionError(error.UnrecognisedLong(long)) ->
+        [doc.from_string("Unrecognised long flag:"), doc.from_string(long)]
+        |> doc.join(doc.space)
+        |> doc.nest(2)
+      error.ExtractionError(error.UnrecognisedShort(short)) ->
+        [doc.from_string("Unrecognised short flag:"), doc.from_string(short)]
+        |> doc.join(doc.space)
+        |> doc.nest(2)
+      error.ExtractionError(error.NoArgument(named)) ->
+        [doc.from_string("No argument for flag:"), doc.from_string(named)]
+        |> doc.join(doc.space)
+        |> doc.nest(2)
+      error.ExtractionError(error.NotAFlag(flag)) ->
+        [doc.from_string("Not a flag:"), doc.from_string(flag)]
+        |> doc.join(doc.space)
+        |> doc.nest(2)
+    }
+  })
+  |> doc.join(doc.line)
 }
 
 fn zip_longest(
