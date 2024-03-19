@@ -7,7 +7,7 @@ import gleam/result
 import gleam/string
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
-import sheen/internal/error.{as_conflict, rule_conflict}
+import sheen/internal/error.{rule_conflict}
 
 pub opaque type Builder(a) {
   Builder(
@@ -133,21 +133,27 @@ fn build(
     let cb.NamedSpec(long: long, short: short, ..) = spec
     let cb.Builder(spec: cmd, ..) = cmd_builder
 
-    use first <- result.try(
-      string.first(name)
-      |> as_conflict("Argument name cannot be empty"),
-    )
-
     let long = option.unwrap(long, name)
-    let short = option.unwrap(short, first)
 
-    // TODO: Check if short and long flags are used
+    use <- rule_conflict(long == "", "Argument name cannot be empty")
+
+    let invalid_short = case short {
+      Some(s) ->
+        case string.length(s) {
+          1 -> ""
+          _ -> "Argument short name must be a single character: " <> s
+        }
+      None -> ""
+    }
+
+    use <- rule_conflict(invalid_short != "", invalid_short)
+
     use <- rule_conflict(
       dict.has_key(cmd.named, name),
       "Argument " <> name <> " already defined",
     )
 
-    let spec = cb.NamedSpec(..spec, short: Some(short), long: Some(long))
+    let spec = cb.NamedSpec(..spec, long: Some(long))
     let named = dict.insert(cmd.named, name, spec)
     let cmd = cb.CommandSpec(..cmd, named: named)
 

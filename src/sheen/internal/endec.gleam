@@ -1,4 +1,3 @@
-import gleam/bool
 import gleam/dict
 import gleam/dynamic
 import gleam/function
@@ -88,16 +87,9 @@ pub fn encode_all(
   input: EncoderInput,
   encoders: Encoders,
 ) -> ParseResult(List(dynamic.Dynamic)) {
-  let #(values, errors) =
-    encoders
-    |> list.map(function.apply1(_, input))
-    |> result.partition
-
-  let errors = list.concat(errors)
-
-  use <- bool.guard([] != errors, Error(errors))
-
-  Ok(values)
+  encoders
+  |> list.map(function.apply1(_, input))
+  |> error.collect_results()
 }
 
 pub fn valid(val: a) -> Decoder(a) {

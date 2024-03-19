@@ -10,9 +10,9 @@ import sheen/internal/error.{type ExtractionError, type ParseError}
 
 pub type OptionKind {
   /// This is a flag, and will not consume the next argument.
-  Flag(String)
+  Flag(name: String)
   /// This is a named option, and will consume the next argument.
-  Named(String)
+  Named(name: String)
 }
 
 pub type ExtractorSpec {
@@ -41,56 +41,105 @@ pub type Extractor {
   )
 }
 
-fn create_spec(cmd: cb.CommandSpec) {
+fn maybe_insert_unique(
+  opt: Option(String),
+  acc: dict.Dict(String, a),
+  val: a,
+  errors: List(error.BuildError),
+  err_kind: fn(String) -> error.BuildError,
+) {
+  case opt {
+    Some(name) ->
+      case dict.has_key(acc, name) {
+        True -> {
+          let error = err_kind(name)
+          #(acc, [error, ..errors])
+        }
+        False -> {
+          let acc = dict.insert(acc, name, val)
+          #(acc, errors)
+        }
+      }
+    None -> #(acc, errors)
+  }
+}
+
+pub fn create_spec(cmd: cb.CommandSpec) -> error.BuildResult(ExtractorSpec) {
   let short = dict.new()
   let long = dict.new()
+  let errors = []
 
-  let #(short, long) =
+  let #(short, long, errors) =
     dict.fold(
       over: cmd.flags,
-      from: #(short, long),
+      from: #(short, long, errors),
       with: fn(acc, flag_name, spec) {
-        let #(short, long) = acc
+        let #(short, long, errors) = acc
 
-        let short = case spec.short {
-          Some(name) -> dict.insert(short, name, Flag(flag_name))
-          None -> short
-        }
+        let #(short, errors) =
+          maybe_insert_unique(
+            spec.short,
+            short,
+            Flag(flag_name),
+            errors,
+            error.ReusedShort,
+          )
 
-        let long = case spec.long {
-          Some(name) -> dict.insert(long, name, Flag(flag_name))
-          None -> long
-        }
+        let #(long, errors) =
+          maybe_insert_unique(
+            spec.long,
+            long,
+            Flag(flag_name),
+            errors,
+            error.ReusedLong,
+          )
 
-        #(short, long)
+        #(short, long, errors)
       },
     )
 
-  let #(short, long) =
+  let #(short, long, errors) =
     dict.fold(
       over: cmd.named,
-      from: #(short, long),
+      from: #(short, long, errors),
       with: fn(acc, arg_name, spec) {
-        let #(short, long) = acc
+        let #(short, long, errors) = acc
 
-        let short = case spec.short {
-          Some(name) -> dict.insert(short, name, Named(arg_name))
-          None -> short
-        }
+        let #(short, errors) =
+          maybe_insert_unique(
+            spec.short,
+            short,
+            Named(arg_name),
+            errors,
+            error.ReusedShort,
+          )
 
-        let long = case spec.long {
-          Some(name) -> dict.insert(long, name, Named(arg_name))
-          None -> long
-        }
+        let #(long, errors) =
+          maybe_insert_unique(
+            spec.long,
+            long,
+            Named(arg_name),
+            errors,
+            error.ReusedLong,
+          )
 
-        #(short, long)
+        #(short, long, errors)
       },
     )
 
-  let subcommands =
-    dict.map_values(cmd.subcommands, fn(_, subcommand) {
-      create_spec(subcommand.spec)
+  use <- error.emit_errors(errors)
+
+  use subcommands <- result.try(
+    dict.to_list(cmd.subcommands)
+    |> list.map(fn(subc) {
+      let #(name, subcommand) = subc
+      use spec <- result.try(create_spec(subcommand.spec))
+      Ok(#(name, spec))
     })
+    |> error.collect_results(),
+  )
+
+  let subcommands = dict.from_list(subcommands)
 
   let max_args = {
     use <- bool.guard(dict.new() == subcommands, Some(0))
@@ -108,16 +157,16 @@ fn create_spec(cmd: cb.CommandSpec) {
       }
     })
 
-  ExtractorSpec(
+  Ok(ExtractorSpec(
     short: short,
     long: long,
     subcommands: subcommands,
     max_args: max_args,
-  )
+  ))
 }
 
 pub fn new(cmd: cb.CommandSpec) -> Extractor {
-  let spec = create_spec(cmd)
+  let assert Ok(spec) = create_spec(cmd)
   Extractor(
     spec: spec,
     opts_ignored: False,

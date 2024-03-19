@@ -73,6 +73,9 @@ pub fn build_errors_to_doc(errors: List(error.BuildError)) -> Document {
     list.map(errors, fn(error) {
       case error {
         error.RuleConflict(message) -> flexible_text(message)
+        error.ReusedLong(long) -> doc.from_string("Reused long flag: " <> long)
+        error.ReusedShort(short) ->
+          doc.from_string("Reused short flag: " <> short)
       }
     })
   doc.join(error_docs, doc.line)

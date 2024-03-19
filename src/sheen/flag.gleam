@@ -5,7 +5,7 @@ import gleam/result
 import gleam/string
 import sheen/internal/command_builder as cb
 import sheen/internal/endec
-import sheen/internal/error.{as_conflict, rule_conflict}
+import sheen/internal/error.{rule_conflict}
 
 pub opaque type Builder {
   Builder(name: String, spec: cb.FlagSpec)
@@ -57,20 +57,27 @@ fn build(
     let cb.FlagSpec(long: long, short: short, ..) = spec
     let cb.Builder(spec: cmd, ..) = cmd_builder
 
-    use first <- result.try(
-      string.first(name)
-      |> as_conflict("Flag name cannot be empty"),
-    )
-
     let long = option.unwrap(long, name)
-    let short = option.unwrap(short, first)
+
+    use <- rule_conflict(long == "", "Flag name cannot be empty")
+
+    let invalid_short = case short {
+      Some(s) ->
+        case string.length(s) {
+          1 -> ""
+          _ -> "Short flag must be a single character: " <> s
+        }
+      None -> ""
+    }
+
+    use <- rule_conflict(invalid_short != "", invalid_short)
 
     use <- rule_conflict(
       dict.has_key(cmd.flags, name),
       "Flag " <> name <> " already defined",
     )
 
-    let spec = cb.FlagSpec(..spec, long: Some(long), short: Some(short))
+    let spec = cb.FlagSpec(..spec, long: Some(long))
     let flags = dict.insert(cmd.flags, name, spec)
     let cmd = cb.CommandSpec(..cmd, flags: flags)
 

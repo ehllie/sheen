@@ -1,10 +1,11 @@
-import gleam/bool
 import gleam/dynamic
 import gleam/list
 import gleam/result
 
 pub type BuildError {
   RuleConflict(String)
+  ReusedShort(String)
+  ReusedLong(String)
 }
 
 pub type BuildResult(a) =
@@ -15,7 +16,7 @@ pub fn rule_conflict(
   conflict: String,
   alternative: fn() -> BuildResult(a),
 ) -> BuildResult(a) {
-  bool.guard(requirement, Error([RuleConflict(conflict)]), alternative)
+  emit_error_guard(requirement, RuleConflict(conflict), alternative)
 }
 
 pub fn as_conflict(res: Result(a, b), conflict: String) -> BuildResult(a) {
@@ -47,4 +48,34 @@ pub type ExtractionError {
   NoArgument(String)
   /// When a flag is given an argument.
   NotAFlag(String)
+}
+
+pub fn collect_results(
+  results: List(Result(ok, List(err))),
+) -> Result(List(ok), List(err)) {
+  let #(ok, errors) = result.partition(results)
+  case errors {
+    [] -> Ok(ok)
+    _ -> Error(list.concat(errors))
+  }
+}
+
+pub fn emit_error_guard(
+  condition: Bool,
+  error: err,
+  callback: fn() -> Result(ok, List(err)),
+) {
+  case callback(), condition {
+    res, False -> res
+    Ok(_), True -> Error([error])
+    Error(errors), True -> Error([error, ..errors])
+  }
+}
+
+pub fn emit_errors(errors: List(err), callback: fn() -> Result(ok, List(err))) {
+  case callback(), errors {
+    res, [] -> res
+    Ok(_), _ -> Error(errors)
+    Error(new_errors), _ -> Error(list.append(errors, new_errors))
+  }
 }

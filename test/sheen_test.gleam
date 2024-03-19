@@ -24,6 +24,7 @@ pub fn parser_build_test() {
     |> sheen.try_build({
       use verbosity <-
         flag.new("verbose")
+        |> flag.short("v")
         |> flag.count()
       use help <-
         flag.new("help")
@@ -63,6 +64,7 @@ pub type StructuredInput {
 fn structured_cmd() -> sheen.Command(StructuredInput) {
   use verbosity <-
     flag.new("verbose")
+    |> flag.short("v")
     |> flag.count()
 
   use file <-
@@ -231,18 +233,20 @@ pub fn basic_usage_test() {
     |> sheen.name("my_cli_app")
     |> sheen.version("0.1.0")
     |> sheen.authors(["Lucy", "Ellie"])
-    |> sheen.try_build({
+    |> sheen.build({
       use <- sheen.describe(
         "This command has positional and named arguments, flags and subcommands.",
       )
       use _ <-
         flag.new("verbose")
         |> flag.help("Increase verbosity")
+        |> flag.short("v")
         |> flag.count()
       use _ <-
         named.new("num")
         |> named.integer()
         |> named.help("A number")
+        |> named.short("n")
         |> named.optional()
       use _ <-
         arg.new()
@@ -255,7 +259,7 @@ pub fn basic_usage_test() {
       sheen.return(sheen.valid(Nil))
     })
 
-  let parser = should.be_ok(parser)
+  // let parser = should.be_ok(parser)
 
   let usage =
     sheen.usage(parser.spec)
