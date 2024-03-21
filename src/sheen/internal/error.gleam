@@ -1,3 +1,4 @@
+import glam/doc
 import gleam/dynamic
 import gleam/list
 import gleam/result
@@ -32,6 +33,7 @@ pub type ParseError {
   ValidationError(String)
   ExtractionError(ExtractionError)
   InternalError(String)
+  Help(doc: doc.Document)
 }
 
 pub type ParseResult(a) =

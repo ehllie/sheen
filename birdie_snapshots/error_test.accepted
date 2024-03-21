@@ -1,0 +1,8 @@
+---
+version: 1.1.0
+title: error_test
+file: ./test/sheen_test.gleam
+test_name: error_and_help_test
+---
+Validation error: Expected an integer
+Validation error: Expected exactly one value

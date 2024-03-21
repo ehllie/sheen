@@ -2,7 +2,7 @@
 version: 1.1.0
 title: basic_usage_test
 file: ./test/sheen_test.gleam
-test_name: basic_usage_test
+test_name: error_and_help_test
 ---
 my_cli_app 0.1.0
 Authors: Lucy, Ellie
@@ -17,6 +17,7 @@ Arguments:
         but stay aligned to the help column
 
 Options:
+  -h  --help                Show help message and exit.
   -v  --verbose             Increase verbosity
   -n  --num      [INTEGER]  A number
 

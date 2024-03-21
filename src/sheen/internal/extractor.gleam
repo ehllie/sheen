@@ -165,8 +165,7 @@ pub fn create_spec(cmd: cb.CommandSpec) -> error.BuildResult(ExtractorSpec) {
   ))
 }
 
-pub fn new(cmd: cb.CommandSpec) -> Extractor {
-  let assert Ok(spec) = create_spec(cmd)
+pub fn new(spec: ExtractorSpec) -> Extractor {
   Extractor(
     spec: spec,
     opts_ignored: False,

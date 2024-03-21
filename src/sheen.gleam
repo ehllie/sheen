@@ -20,15 +20,27 @@ pub type ParserSpec {
     name: option.Option(String),
     authors: List(String),
     version: option.Option(String),
+    help: Bool,
   )
 }
 
 pub type Parser(a) {
-  Parser(spec: ParserSpec, encoders: endec.Encoders, decoder: endec.Decoder(a))
+  Parser(
+    spec: ParserSpec,
+    encoders: endec.Encoders,
+    decoder: endec.Decoder(a),
+    extractor: extractor.ExtractorSpec,
+  )
 }
 
 pub fn new() -> ParserSpec {
-  ParserSpec(name: None, authors: list.new(), cmd: cb.new_spec(), version: None)
+  ParserSpec(
+    name: None,
+    authors: list.new(),
+    cmd: cb.new_spec(),
+    version: None,
+    help: True,
+  )
 }
 
 pub fn name(to parser: ParserSpec, set name: String) {
@@ -43,16 +55,81 @@ pub fn version(to parser: ParserSpec, set version: String) {
   ParserSpec(..parser, version: Some(version))
 }
 
+pub fn no_help(to parser: ParserSpec) {
+  ParserSpec(..parser, help: False)
+}
+
+fn add_help(spec: cb.CommandSpec) -> error.BuildResult(cb.CommandSpec) {
+  let cb.CommandSpec(flags: flags, subcommands: subcommands, ..) = spec
+  use <- error.rule_conflict(
+    dict.has_key(flags, "help"),
+    "Help flag is defined automatically. Either disable help or don't define a help flag.",
+  )
+  let help_spec =
+    cb.FlagSpec(
+      short: Some("h"),
+      long: Some("help"),
+      display: None,
+      count: False,
+      help: "Show help message and exit.",
+    )
+  let flags = dict.insert(flags, "help", help_spec)
+  use subcommands <- result.try(
+    dict.to_list(subcommands)
+    |> list.map(fn(el) {
+      let #(name, subcommand) = el
+      let wrapper = case subcommand {
+        cb.Optional(_) -> cb.Optional
+        cb.Required(_) -> cb.Required
+      }
+      add_help(subcommand.spec)
+      |> result.map(fn(new) { #(name, wrapper(new)) })
+    })
+    |> error.collect_results()
+    |> result.map(dict.from_list),
+  )
+  Ok(cb.CommandSpec(..spec, flags: flags, subcommands: subcommands))
+}
+
+fn find_help(
+  spec: cb.CommandSpec,
+  input: endec.EncoderInput,
+  path: List(String),
+) -> Result(#(List(String), cb.CommandSpec), Nil) {
+  case dict.get(input.flags, "help") {
+    Ok(_) -> Ok(#(list.reverse(path), spec))
+    Error(_) ->
+      dict.to_list(input.subcommands)
+      |> list.map(fn(el) {
+        let #(name, subcommand_input) = el
+        use spec <- result.try(dict.get(spec.subcommands, name))
+        find_help(spec.spec, subcommand_input, [name, ..path])
+      })
+      |> list.reduce(result.or)
+      |> result.flatten()
+  }
+}
+
 pub fn try_build(
   from parser: ParserSpec,
   with command: cb.Command(a),
 ) -> error.BuildResult(Parser(a)) {
-  let ParserSpec(cmd: cmd, ..) = parser
+  let ParserSpec(cmd: cmd, help: help, ..) = parser
   let builder = cb.Builder(spec: cmd, encoders: [], decoder: valid(Nil))
   let cb.Command(cmd) = command
-  use cb.Builder(spec, encoders, decoder) <- result.try(cmd(builder))
-  let spec = ParserSpec(..parser, cmd: spec)
-  Ok(Parser(spec: spec, encoders: encoders, decoder: decoder))
+  use cb.Builder(command_spec, encoders, decoder) <- result.try(cmd(builder))
+  use command_spec <- result.try(case help {
+    True -> add_help(command_spec)
+    False -> Ok(command_spec)
+  })
+  let spec = ParserSpec(..parser, cmd: command_spec)
+  use extractor <- result.try(extractor.create_spec(spec.cmd))
+  Ok(Parser(
+    spec: spec,
+    encoders: encoders,
+    decoder: decoder,
+    extractor: extractor,
+  ))
 }
 
 pub fn build(from parser: ParserSpec, with command: cb.Command(a)) -> Parser(a) {
@@ -108,18 +185,32 @@ pub type ParseResult(a) =
   Result(a, List(ParseError))
 
 pub fn try_run(parser: Parser(a), args: List(String)) -> ParseResult(a) {
-  let Parser(spec, encoders, decoder) = parser
-  let ParserSpec(cmd, ..) = spec
-  let #(result, errors) =
-    extractor.new(cmd)
-    |> extractor.run(args)
-  case errors {
-    [] ->
-      result
-      |> endec.validate_and_run(encoders, decoder)
-      |> result.map_error(fn(e) { e })
+  let Parser(
+    encoders: encoders,
+    decoder: decoder,
+    extractor: extractor,
+    spec: spec,
+  ) = parser
 
-    errors -> Error(errors)
+  let name = option.unwrap(spec.name, "<CMD>")
+  let #(result, errors) =
+    extractor.new(extractor)
+    |> extractor.run(args)
+
+  case find_help(spec.cmd, result, []) {
+    Ok(#(path, cmd_spec)) -> {
+      let name = string.join([name, ..path], " ")
+      Error([
+        error.Help(doc.join(
+          [parser_header(spec), command_usage(cmd_spec, name)],
+          doc.lines(2),
+        )),
+      ])
+    }
+    _ -> {
+      use <- error.emit_errors(errors)
+      endec.validate_and_run(result, encoders, decoder)
+    }
   }
 }
 
@@ -182,6 +273,7 @@ pub fn parse_errors_to_doc(errors: List(error.ParseError)) -> Document {
         [doc.from_string("Not a flag:"), doc.from_string(flag)]
         |> doc.join(doc.space)
         |> doc.nest(2)
+      error.Help(doc: doc) -> doc
     }
   })
   |> doc.join(doc.line)
@@ -419,7 +511,7 @@ fn argument_doc(args: List(cb.ArgSpec)) {
   }
 }
 
-fn command_usage(spec: cb.CommandSpec, name: String) {
+fn command_usage(spec: cb.CommandSpec, name: String) -> Document {
   let cb.CommandSpec(
     description: description,
     args: args,
@@ -482,10 +574,10 @@ fn command_usage(spec: cb.CommandSpec, name: String) {
   doc.join(sections, doc.lines(2))
 }
 
-pub fn usage(spec: ParserSpec) {
-  let ParserSpec(cmd: cmd, authors: authors, version: version, name: name) =
-    spec
-  let header = {
+fn parser_header(spec: ParserSpec) -> Document {
+  let ParserSpec(authors: authors, version: version, name: name, ..) = spec
+
+  let info = {
     use name <- option.then(name)
     case version {
       Some(version) -> name <> " " <> version
@@ -506,9 +598,13 @@ pub fn usage(spec: ParserSpec) {
       |> Some
     }
   }
-  let header =
-    list.concat([option.values([header, authors])])
-    |> doc.join(doc.line)
-  let usage = command_usage(cmd, option.unwrap(spec.name, "<CMD>"))
+
+  list.concat([option.values([info, authors])])
+  |> doc.join(doc.line)
+}
+
+pub fn usage(spec: ParserSpec) -> Document {
+  let header = parser_header(spec)
+  let usage = command_usage(spec.cmd, option.unwrap(spec.name, "<CMD>"))
   doc.join([header, usage], doc.lines(2))
 }
